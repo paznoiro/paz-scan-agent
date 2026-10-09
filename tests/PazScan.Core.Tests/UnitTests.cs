@@ -9,19 +9,23 @@ public class OriginPolicyTests
     private static readonly OriginPolicy Defaults = new(AgentOptions.DefaultAllowedOrigins);
 
     [Theory]
-    [InlineData("https://paznoiro.com")]
-    [InlineData("https://app.paznoiro.com")]
-    [InlineData("https://a.b.paznoiro.com")]
-    [InlineData("http://localhost:3000")]
+    [InlineData("https://app.zaporion.com")]
+    [InlineData("https://a.b.zaporion.com")]
+    [InlineData("https://alzone.zaphrms.com")]
+    [InlineData("https://shop.vanix.com")]
     [InlineData("http://127.0.0.1:3006")]
     public void Allows_every_place_Paz_is_served_from(string origin) => Assert.True(Defaults.IsAllowed(origin));
 
     [Theory]
-    [InlineData("http://app.paznoiro.com")] // not https
-    [InlineData("https://paznoiro.com:8443")] // a port the pattern does not name
-    [InlineData("https://evilpaznoiro.com")]
-    [InlineData("https://paznoiro.com.evil.example")]
-    [InlineData("https://app.paznoiro.com/path")]
+    [InlineData("https://zaporion.com")] // bare domain: only subdomains are listed
+    [InlineData("https://zaphrms.com")] // bare domain: only subdomains are listed
+    [InlineData("https://vanix.com")] // bare domain: only subdomains are listed
+    [InlineData("http://app.zaporion.com")] // not https
+    [InlineData("https://app.zaporion.com:8443")] // a port the pattern does not name
+    [InlineData("https://evilzaporion.com")]
+    [InlineData("https://zaporion.com.evil.example")]
+    [InlineData("http://localhost:3000")] // no longer listed
+    [InlineData("https://app.zaporion.com/path")]
     [InlineData("null")]
     [InlineData("")]
     [InlineData(null)]
@@ -36,9 +40,9 @@ public class OriginPolicyTests
     }
 
     [Theory]
-    [InlineData("paznoiro.com")]
+    [InlineData("pazscan")]
     [InlineData("https://paz*.com")]
-    [InlineData("https://paznoiro.com:http")]
+    [InlineData("https://pazscan:http")]
     public void Malformed_patterns_fail_loudly_at_start_up(string pattern) =>
         Assert.Throws<FormatException>(() => new OriginPolicy([pattern]));
 }

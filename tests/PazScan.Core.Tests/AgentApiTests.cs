@@ -23,7 +23,7 @@ public class AgentApiTests
     [Theory]
     [InlineData(null)]
     [InlineData("https://evil.example")]
-    [InlineData("https://paznoiro.com.evil.example")]
+    [InlineData("https://zaphrms.com.evil.example")]
     [InlineData("null")]
     public async Task Pages_that_are_not_Paz_are_refused(string? origin)
     {

@@ -19,13 +19,12 @@ public sealed class AgentOptions
     /// <summary>
     /// Every host the Paz web app is served from. <c>*.</c> stands for one or more subdomain labels, so a
     /// tenant's own subdomain is covered; <c>:*</c> for any port, which is what local development needs.
-    /// Add the real Paz domains here.
     /// </summary>
     public static readonly IReadOnlyList<string> DefaultAllowedOrigins =
     [
-        "https://paznoiro.com",
-        "https://*.paznoiro.com",
-        "http://localhost:*",
+        "https://*.zaporion.com",
+        "https://*.zaphrms.com",
+        "https://*.vanix.com",
         "http://127.0.0.1:*",
     ];
 

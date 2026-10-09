@@ -109,10 +109,24 @@ Settings go in an optional `appsettings.json` beside the exe, or in `PAZSCAN_` e
 variables:
 
 ```json
-{ "Agent": { "Port": 47316, "AllowedOrigins": ["https://*.paznoiro.com"], "SessionIdleMinutes": 120 } }
+{ "Agent": { "Port": 47316, "AllowedOrigins": ["https://*.zaporion.com", "https://*.zaphrms.com"], "SessionIdleMinutes": 120 } }
+```
+
+The same list through environment variables (one entry per index; `setx` writes it for the
+user, so run it in the same account that runs the agent):
+
+```powershell
+setx PAZSCAN_Agent__AllowedOrigins__0 "https://*.zaporion.com"
+setx PAZSCAN_Agent__AllowedOrigins__1 "https://*.zaphrms.com"
+setx PAZSCAN_Agent__AllowedOrigins__2 "https://*.vanix.com"
+setx PAZSCAN_Agent__AllowedOrigins__3 "http://127.0.0.1:*"
 ```
 
 `AllowedOrigins` replaces the built-in list rather than adding to it. The built-in list is
-`paznoiro.com`, `*.paznoiro.com`, and `localhost` /
-`127.0.0.1` on any port. Logs are in `%LOCALAPPDATA%\Paz Scan Agent\logs` (tray menu → **Open
+`*.zaporion.com`, `*.zaphrms.com`, `*.vanix.com`, and `127.0.0.1` on any port — bare domains
+(`https://zaporion.com` with no subdomain) are not covered. Logs are in
+`%LOCALAPPDATA%\Paz Scan Agent\logs` (tray menu → **Open
 logs**).
+
+Changing `appsettings.json` or the `PAZSCAN_` variables needs an agent restart: options are
+read once at start-up, so exit the tray icon and start the agent again.

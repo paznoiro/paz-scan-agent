@@ -9,7 +9,7 @@ namespace PazScan.Core.Tests;
 /// <summary>The agent on an in-memory server, with a client that looks like the Paz web app.</summary>
 public sealed class AgentFixture : IAsyncDisposable
 {
-    public const string AllowedOrigin = "https://app.paznoiro.com";
+    public const string AllowedOrigin = "https://alzone.zaphrms.com";
 
     private readonly WebApplication _app;
 
