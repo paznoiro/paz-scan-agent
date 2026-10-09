@@ -2,6 +2,8 @@
 #
 #   powershell -ExecutionPolicy Bypass -File scripts\build-installer.ps1 [-Version 1.0.0] [-NoInstall]
 #
+# -Version defaults to <Version> in Directory.Build.props.
+#
 # Needs the .NET 10 SDK and Inno Setup 6. Whichever is missing is installed first, for the current
 # user only: no administrator rights, nothing machine-wide, nothing added to PATH.
 #
@@ -14,7 +16,7 @@
 # Written for Windows PowerShell 5.1, which every Windows 10 and 11 has; PowerShell 7 works too.
 
 param(
-    [string]$Version = "1.0.0",
+    [string]$Version,
     [switch]$NoInstall
 )
 
@@ -25,6 +27,10 @@ $ProgressPreference = "SilentlyContinue"
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
 Set-Location (Join-Path $PSScriptRoot "..")
+
+if (-not $Version) {
+    $Version = ([xml](Get-Content Directory.Build.props)).SelectSingleNode("//Version").InnerText
+}
 
 $DotnetChannel = "10.0"
 $DotnetInstallScript = "https://dot.net/v1/dotnet-install.ps1"

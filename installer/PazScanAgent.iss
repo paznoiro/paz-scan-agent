@@ -8,10 +8,12 @@
 ; sign-in through the current user's Run key, which is all a scanner on someone's desk needs.
 
 #ifndef AppVersion
-  #define AppVersion "1.0.0"
+  ; No default: one would quietly disagree with the program's own version after a bump.
+  #error Pass the version: iscc /DAppVersion=1.2.3 installer\PazScanAgent.iss
 #endif
 #define AppName "Paz Scan Agent"
 #define AppExe "PazScanAgent.exe"
+#define SettingsFile "appsettings.json"
 #define PublishDir "..\artifacts\win-x64"
 
 [Setup]
@@ -39,10 +41,6 @@ WizardStyle=modern
 [Files]
 Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
-[InstallDelete]
-; An upgrade replaces the whole app; nothing from the previous version may linger beside it.
-Type: filesandordirs; Name: "{app}\*"
-
 [Icons]
 Name: "{userprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"
 
@@ -53,19 +51,68 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 Filename: "{app}\{#AppExe}"; Description: "Start {#AppName} now"; Flags: nowait postinstall skipifsilent
 Filename: "{app}\{#AppExe}"; Flags: nowait skipifnotsilent
 
-[UninstallRun]
-Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM {#AppExe}"; Flags: runhidden; RunOnceId: "StopAgent"
-
 [UninstallDelete]
 Type: filesandordirs; Name: "{localappdata}\{#AppName}"
 
 [Code]
-// A running agent holds its files open. It keeps nothing worth saving (scans in progress belong to
-// a browser tab that will retry), so stop it rather than ask the person to find it in the tray.
-function PrepareToInstall(var NeedsRestart: Boolean): String;
+// A running agent holds its files open, and so does the NAPS2 worker it starts (/T takes that too).
+// It keeps nothing worth saving (scans in progress belong to a browser tab that will retry), so stop
+// it rather than ask the person to find it in the tray.
+procedure StopAgent;
 var
   ResultCode: Integer;
 begin
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM {#AppExe}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  if Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM {#AppExe}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode)
+     and (ResultCode = 0) then
+    // Killed; Windows lets go of its files a moment later.
+    Sleep(1000);
+end;
+
+// An upgrade replaces the whole app; nothing from the previous version may linger beside it. Kept:
+// the person's own settings file, and the uninstaller, which Setup updates rather than replaces.
+// Only a folder that holds the agent is cleared, never one some other /DIR= pointed at.
+procedure ClearPreviousVersion;
+var
+  Dir: String;
+  Found: TFindRec;
+begin
+  Dir := ExpandConstant('{app}');
+  if not FileExists(Dir + '\{#AppExe}') then Exit;
+  if FindFirst(Dir + '\*', Found) then
+  try
+    repeat
+      if (Found.Name <> '.') and (Found.Name <> '..') and (CompareText(Found.Name, '{#SettingsFile}') <> 0)
+         and (Pos('unins', Lowercase(Found.Name)) <> 1) then
+      begin
+        if Found.Attributes and FILE_ATTRIBUTE_DIRECTORY <> 0 then
+          DelTree(Dir + '\' + Found.Name, True, True, True)
+        else
+          DeleteFile(Dir + '\' + Found.Name);
+      end;
+    until not FindNext(Found);
+  finally
+    FindClose(Found);
+  end;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  StopAgent;
   Result := '';
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssInstall then
+    ClearPreviousVersion;
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep = usUninstall then
+  begin
+    StopAgent;
+    // Setup did not install the settings file, so the uninstaller would leave it, and the folder.
+    DeleteFile(ExpandConstant('{app}\{#SettingsFile}'));
+  end;
 end;

@@ -210,6 +210,36 @@ public class AgentApiTests
         Assert.Equal("FEEDER_EMPTY", ended.Error!.Code);
     }
 
+    [Fact]
+    public async Task A_scanner_that_stops_quietly_when_cancelled_still_reports_cancelled()
+    {
+        await using var agent = await AgentFixture.StartAsync(new StopsQuietly());
+        var client = agent.Client();
+        var started = await agent.StartScanAsync(client, new ScanRequest(Stack, "feeder", null, null, null, null, null));
+        var cancelled = await (await client.PostAsync($"v1/scans/{started.Id}/cancel", null)).Content.ReadFromJsonAsync<ScanStatus>();
+        Assert.Equal("cancelled", cancelled!.State);
+    }
+
+    /// <summary>Like NAPS2: a cancelled scan simply ends, with no exception.</summary>
+    private sealed class StopsQuietly : IScanBackend
+    {
+        private readonly DemoBackend _demo = new(pageDelay: TimeSpan.Zero);
+
+        public IReadOnlyList<string> Drivers => ["demo"];
+
+        public Task<IReadOnlyList<DeviceInfo>> ListDevicesAsync(CancellationToken cancellationToken) => _demo.ListDevicesAsync(cancellationToken);
+
+        public Task<DeviceCaps?> GetCapsAsync(string deviceId, CancellationToken cancellationToken) => _demo.GetCapsAsync(deviceId, cancellationToken);
+
+        public async IAsyncEnumerable<ScannedImage> ScanAsync(ScanSettings settings, [EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            var stopped = new TaskCompletionSource();
+            await using (cancellationToken.Register(() => stopped.TrySetResult()))
+                await stopped.Task;
+            yield break;
+        }
+    }
+
     /// <summary>Real pages from the demo scanner, then NAPS2's own feeder-empty exception.</summary>
     private sealed class EmptiesAfter(int pages) : IScanBackend
     {

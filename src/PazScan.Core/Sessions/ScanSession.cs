@@ -98,7 +98,8 @@ public sealed class ScanSession
                     }
                 }
             }
-            Finish("done", null);
+            // NAPS2 ends a cancelled scan quietly rather than throwing.
+            Finish(_cancel.IsCancellationRequested ? "cancelled" : "done", null);
         }
         catch (OperationCanceledException) when (_cancel.IsCancellationRequested)
         {

@@ -23,7 +23,7 @@ public sealed class FileLoggerProvider : ILoggerProvider
         foreach (var old in new DirectoryInfo(directory).GetFiles("agent-*.log")
                      .Where(file => file.LastWriteTimeUtc < DateTime.UtcNow.AddDays(-KeepDays)))
         {
-            try { old.Delete(); } catch (IOException) { }
+            try { old.Delete(); } catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
         }
     }
 
@@ -40,7 +40,7 @@ public sealed class FileLoggerProvider : ILoggerProvider
         lock (_gate)
         {
             try { File.AppendAllText(path, line + Environment.NewLine); }
-            catch (IOException) { }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
         }
     }
 

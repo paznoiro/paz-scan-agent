@@ -49,8 +49,8 @@ There are three demo scanners:
 The installer is built on Windows with [Inno Setup 6](https://jrsoftware.org/isinfo.php):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\build-installer.ps1 -Version 1.0.0
-# → artifacts\PazScanAgentSetup-1.0.0.exe (~50 MB)
+powershell -ExecutionPolicy Bypass -File scripts\build-installer.ps1
+# → artifacts\PazScanAgentSetup-1.0.0.exe (~50 MB); -Version defaults to <Version> in Directory.Build.props
 ```
 
 The script installs anything missing first, for the current user only. It needs no admin rights and
@@ -62,17 +62,23 @@ does not change PATH:
 `-NoInstall` stops with a message instead. A copy that is already installed, whether for all users,
 this user or on PATH, is used as it is.
 
+To try a setup end to end (install, upgrade over the running agent, uninstall), run
+`scripts\test-installer.ps1 -Setup artifacts\PazScanAgentSetup-1.0.0.exe -Version 1.0.0`. It replaces,
+then removes, any Paz Scan Agent installed for the current user.
+
 ## CI
 
-Merges to `master` run `dotnet test` plus the installer build above; the setup is kept as a
-run artifact. Pushing a version tag publishes it:
+Merges to `master` run `dotnet test` plus the installer build above, then `test-installer.ps1` on
+the Windows runner; the setup is kept as a run artifact. Pushing a version tag publishes it:
 
 ```sh
 git tag v1.2.3 && git push origin v1.2.3   # → GitHub Release "v1.2.3" + PazScanAgentSetup-1.2.3.exe
 ```
 
-The workflow installs the same pinned Inno Setup 6.7.3 (SHA-256 checked) the local script uses.
-Bump `<Version>` in `Directory.Build.props` before tagging so the assembly and the setup agree.
+Bump `<Version>` in `Directory.Build.props` and commit before tagging: a tag that does not match it
+fails the build. A tag with a suffix (`v1.3.0-rc.1`) becomes a pre-release. Re-running a tag's
+workflow replaces the setup on its existing release. The workflow installs the same pinned Inno
+Setup 6.7.3 (SHA-256 checked) the local script uses.
 
 The setup is too large for Cloudflare Pages (25 MiB per file). Host it somewhere else, such as an R2
 bucket or a GitHub release. Then set `VITE_SCAN_AGENT_DOWNLOAD_URL` in the web app so the Scan
@@ -129,4 +135,6 @@ setx PAZSCAN_Agent__AllowedOrigins__3 "http://127.0.0.1:*"
 logs**).
 
 Changing `appsettings.json` or the `PAZSCAN_` variables needs an agent restart: options are
-read once at start-up, so exit the tray icon and start the agent again.
+read once at start-up, so exit the tray icon and start the agent again. An upgrade keeps
+`appsettings.json`; uninstalling removes it. A setting the agent cannot use (such as a malformed
+allowed origin) shows in the tray icon's menu and in the log.

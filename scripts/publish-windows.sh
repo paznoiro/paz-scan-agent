@@ -6,4 +6,5 @@ cd "$(dirname "$0")/.."
 rm -rf artifacts/win-x64
 dotnet publish src/PazScan.Agent.Windows -c Release -o artifacts/win-x64 -p:DebugType=none -p:GenerateDocumentationFile=false
 echo "Published to artifacts/win-x64 ($(du -sh artifacts/win-x64 | cut -f1))"
-echo "Installer: iscc installer/PazScanAgent.iss   (on Windows, Inno Setup 6)"
+version=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' Directory.Build.props)
+echo "Installer: iscc /DAppVersion=$version installer/PazScanAgent.iss   (on Windows, Inno Setup 6)"

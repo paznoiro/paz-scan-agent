@@ -1,8 +1,9 @@
 name: Build and release
 
-# Merges to master verify everything and produce the installer as a run artifact.
-# Pushing a tag like v1.2.3 additionally attaches the installer to a GitHub Release:
+# Merges to master verify everything, build the installer, try it on a clean Windows runner and keep
+# it as a run artifact. Pushing a tag like v1.2.3 additionally attaches it to a GitHub Release:
 #   git tag v1.2.3 && git push origin v1.2.3   # → Release "v1.2.3" + PazScanAgentSetup-1.2.3.exe
+# The tag must match <Version> in Directory.Build.props.
 
 on:
   push:
@@ -11,15 +12,20 @@ on:
   pull_request:
     branches: [master]
 
+# Read-only by default; only the release job may write.
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
       - run: dotnet test
@@ -27,9 +33,11 @@ jobs:
   build-installer:
     needs: test
     runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
 
@@ -37,12 +45,11 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          if ($env:GITHUB_REF -match '^refs/tags/v(.+)$') {
-            "VERSION=$($Matches[1])" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          } else {
-            [xml]$props = Get-Content Directory.Build.props
-            "VERSION=$($props.Project.PropertyGroup.Version)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          $version = ([xml](Get-Content Directory.Build.props)).SelectSingleNode("//Version").InnerText
+          if ($env:GITHUB_REF -match '^refs/tags/v(.+)$' -and $Matches[1] -ne $version) {
+            throw "Tag $env:GITHUB_REF_NAME does not match <Version>$version</Version> in Directory.Build.props. Bump it, commit, and tag that commit."
           }
+          "VERSION=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Publish the agent
         shell: pwsh
@@ -74,16 +81,39 @@ jobs:
           Get-ChildItem artifacts/PazScanAgentSetup-*.exe
 
       - name: Upload the installer
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: PazScanAgentSetup-${{ steps.version.outputs.VERSION }}
-          path: artifacts/PazScanAgentSetup-*.exe
+          path: artifacts/PazScanAgentSetup-${{ steps.version.outputs.VERSION }}.exe
+          if-no-files-found: error
 
-      - name: Attach to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Try the installer (install, upgrade, uninstall)
         shell: pwsh
+        run: ./scripts/test-installer.ps1 -Setup "artifacts/PazScanAgentSetup-${{ steps.version.outputs.VERSION }}.exe" -Version "${{ steps.version.outputs.VERSION }}"
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build-installer
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: PazScanAgentSetup-${{ needs.build-installer.outputs.version }}
+          path: dist
+
+      # Re-runnable: a release that already exists (say, from a re-run) gets the setup replaced.
+      - name: Attach to GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
         run: |
-          $exe = Get-ChildItem artifacts/PazScanAgentSetup-*.exe | Select-Object -First 1
-          gh release create $env:GITHUB_REF_NAME --title $env:GITHUB_REF_NAME --generate-notes $exe.FullName
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" dist/*.exe --clobber
+          else
+            prerelease=()
+            [[ "$TAG" == *-* ]] && prerelease=(--prerelease)
+            gh release create "$TAG" dist/*.exe --verify-tag --title "$TAG" --generate-notes "${prerelease[@]}"
+          fi

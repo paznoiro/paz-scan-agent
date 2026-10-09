@@ -35,7 +35,7 @@ public sealed class ScanSessionManager : IDisposable
         {
             if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
         }
-        catch (IOException error)
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
             logger.LogWarning(error, "Could not clear {Root}", _root);
         }
@@ -100,7 +100,7 @@ public sealed class ScanSessionManager : IDisposable
         {
             if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
         }
-        catch (IOException error)
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
             _logger.LogWarning(error, "Could not delete {Directory}", directory);
         }

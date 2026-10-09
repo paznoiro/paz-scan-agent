@@ -67,6 +67,13 @@ internal static class Program
             startError = $"Port {options.Port} is in use by another program.";
             logger.LogError(error, "Could not listen on port {Port}", options.Port);
         }
+        catch (Exception error)
+        {
+            // A bad setting, such as a malformed allowed origin. A tray app that died here would just
+            // vanish; say why instead.
+            startError = error.Message;
+            logger.LogError(error, "Could not start");
+        }
 
         Application.Run(new TrayContext(options, logs.Directory, startError));
 
