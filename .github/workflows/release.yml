@@ -1,0 +1,89 @@
+name: Build and release
+
+# Merges to master verify everything and produce the installer as a run artifact.
+# Pushing a tag like v1.2.3 additionally attaches the installer to a GitHub Release:
+#   git tag v1.2.3 && git push origin v1.2.3   # → Release "v1.2.3" + PazScanAgentSetup-1.2.3.exe
+
+on:
+  push:
+    branches: [master]
+    tags: ["v*.*.*"]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet test
+
+  build-installer:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Determine version
+        id: version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -match '^refs/tags/v(.+)$') {
+            "VERSION=$($Matches[1])" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          } else {
+            [xml]$props = Get-Content Directory.Build.props
+            "VERSION=$($props.Project.PropertyGroup.Version)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+
+      - name: Publish the agent
+        shell: pwsh
+        run: dotnet publish src/PazScan.Agent.Windows -c Release -o artifacts/win-x64 -p:DebugType=none "-p:Version=${{ steps.version.outputs.VERSION }}"
+
+      - name: Install Inno Setup 6.7.3
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $ProgressPreference = "SilentlyContinue"
+          $url = "https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe"
+          $sha = "9C73C3BAE7ED48D44112A0F48E66742C00090BDB5BEF71D9D3C056C66E97B732"
+          $installer = Join-Path $env:RUNNER_TEMP "innosetup-6.7.3.exe"
+          Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $installer
+          $hash = (Get-FileHash $installer -Algorithm SHA256).Hash
+          if ($hash -ne $sha) { throw "Inno Setup download does not match its known SHA-256 (got $hash)." }
+          $log = Join-Path $env:RUNNER_TEMP "innosetup-install.log"
+          $p = Start-Process -FilePath $installer -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/SP-","/CURRENTUSER","/LOG=`"$log`"" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Inno Setup install failed (exit $($p.ExitCode)). Log: $log" }
+          $dir = Join-Path $env:LOCALAPPDATA "Programs\Inno Setup 6"
+          if (-not (Test-Path (Join-Path $dir "ISCC.exe"))) { throw "ISCC.exe not found in $dir" }
+          $dir | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Compile the installer
+        shell: pwsh
+        run: |
+          & iscc "/DAppVersion=${{ steps.version.outputs.VERSION }}" installer/PazScanAgent.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed" }
+          Get-ChildItem artifacts/PazScanAgentSetup-*.exe
+
+      - name: Upload the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: PazScanAgentSetup-${{ steps.version.outputs.VERSION }}
+          path: artifacts/PazScanAgentSetup-*.exe
+
+      - name: Attach to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $exe = Get-ChildItem artifacts/PazScanAgentSetup-*.exe | Select-Object -First 1
+          gh release create $env:GITHUB_REF_NAME --title $env:GITHUB_REF_NAME --generate-notes $exe.FullName
