@@ -69,14 +69,19 @@ then removes, any Paz Scan Agent installed for the current user.
 ## CI
 
 Merges to `master` run `dotnet test` plus the installer build above, then `test-installer.ps1` on
-the Windows runner; the setup is kept as a run artifact. Pushing a version tag publishes it:
+the Windows runner; the setup is kept as a run artifact. First bump `<Version>` in
+`Directory.Build.props`, commit and push, and wait for that build to pass. Then tag that commit
+using the project version to publish it:
 
 ```sh
-git tag v1.2.3 && git push origin v1.2.3   # → GitHub Release "v1.2.3" + PazScanAgentSetup-1.2.3.exe
+version=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' Directory.Build.props)
+git tag "v$version"
+git push origin "v$version"   # → GitHub Release + PazScanAgentSetup-<Version>.exe
 ```
 
-Bump `<Version>` in `Directory.Build.props` and commit before tagging: a tag that does not match it
-fails the build. A tag with a suffix (`v1.3.0-rc.1`) becomes a pre-release. Re-running a tag's
+The tag must match the committed project version or the build fails before creating an installer.
+If a release was already published with a mismatched tag, correct the version and publish a new
+patch release. A tag with a suffix (`v1.3.0-rc.1`) becomes a pre-release. Re-running a tag's
 workflow replaces the setup on its existing release. The workflow installs the same pinned Inno
 Setup 6.7.3 (SHA-256 checked) the local script uses.
 
