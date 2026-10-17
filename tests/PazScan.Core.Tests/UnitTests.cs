@@ -13,6 +13,7 @@ public class OriginPolicyTests
     [InlineData("https://a.b.zaporion.com")]
     [InlineData("https://alzone.zaphrms.com")]
     [InlineData("https://shop.vanix.com")]
+    [InlineData("https://demohrms.vanix.store")]
     [InlineData("http://127.0.0.1:3006")]
     public void Allows_every_place_Paz_is_served_from(string origin) => Assert.True(Defaults.IsAllowed(origin));
 
@@ -20,6 +21,7 @@ public class OriginPolicyTests
     [InlineData("https://zaporion.com")] // bare domain: only subdomains are listed
     [InlineData("https://zaphrms.com")] // bare domain: only subdomains are listed
     [InlineData("https://vanix.com")] // bare domain: only subdomains are listed
+    [InlineData("https://vanix.store")] // bare domain: only subdomains are listed
     [InlineData("http://app.zaporion.com")] // not https
     [InlineData("https://app.zaporion.com:8443")] // a port the pattern does not name
     [InlineData("https://evilzaporion.com")]

@@ -125,11 +125,12 @@ user, so run it in the same account that runs the agent):
 setx PAZSCAN_Agent__AllowedOrigins__0 "https://*.zaporion.com"
 setx PAZSCAN_Agent__AllowedOrigins__1 "https://*.zaphrms.com"
 setx PAZSCAN_Agent__AllowedOrigins__2 "https://*.vanix.com"
-setx PAZSCAN_Agent__AllowedOrigins__3 "http://127.0.0.1:*"
+setx PAZSCAN_Agent__AllowedOrigins__3 "https://*.vanix.store"
+setx PAZSCAN_Agent__AllowedOrigins__4 "http://127.0.0.1:*"
 ```
 
 `AllowedOrigins` replaces the built-in list rather than adding to it. The built-in list is
-`*.zaporion.com`, `*.zaphrms.com`, `*.vanix.com`, and `127.0.0.1` on any port — bare domains
+`*.zaporion.com`, `*.zaphrms.com`, `*.vanix.com`, `*.vanix.store`, and `127.0.0.1` on any port — bare domains
 (`https://zaporion.com` with no subdomain) are not covered. Logs are in
 `%LOCALAPPDATA%\Paz Scan Agent\logs` (tray menu → **Open
 logs**).

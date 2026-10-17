@@ -25,6 +25,7 @@ public sealed class AgentOptions
         "https://*.zaporion.com",
         "https://*.zaphrms.com",
         "https://*.vanix.com",
+        "https://*.vanix.store",
         "http://127.0.0.1:*",
     ];
 
