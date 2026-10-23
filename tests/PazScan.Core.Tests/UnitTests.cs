@@ -1,5 +1,7 @@
+using Microsoft.Extensions.Logging;
 using NAPS2.Scan.Exceptions;
 using PazScan.Core.Http;
+using PazScan.Core.Logging;
 using PazScan.Core.Scanning;
 
 namespace PazScan.Core.Tests;
@@ -112,4 +114,76 @@ public class SimplePngTests
 
     [Fact]
     public void Anything_else_has_no_size() => Assert.Null(SimplePng.ReadSize([1, 2, 3, 4, 5, 6]));
+}
+
+public sealed class FileLoggerProviderTests
+{
+    [Fact]
+    public void Rotates_a_log_that_reaches_its_size_limit()
+    {
+        var directory = TestDirectory();
+        try
+        {
+            using var provider = new FileLoggerProvider(directory, LogLevel.Information, maxFileBytes: 1024);
+            var logger = provider.CreateLogger("test");
+            for (var i = 0; i < 100; i++)
+                logger.LogInformation("line {Line} with enough padding to make the file grow quickly", i);
+
+            var files = Directory.GetFiles(directory, "agent-*.log");
+            Assert.True(files.Length > 1);
+            var all = string.Join(Environment.NewLine, files.Select(File.ReadAllText));
+            Assert.Contains("line 0 ", all);
+            Assert.Contains("line 99 ", all);
+        }
+        finally { Delete(directory); }
+    }
+
+    [Fact]
+    public void Removes_logs_older_than_the_keep_window()
+    {
+        var directory = TestDirectory();
+        try
+        {
+            Directory.CreateDirectory(directory);
+            var old = Path.Combine(directory, "agent-20000101.log");
+            File.WriteAllText(old, "old");
+            File.SetLastWriteTimeUtc(old, DateTime.UtcNow.AddDays(-30));
+
+            using var provider = new FileLoggerProvider(directory, LogLevel.Information, keepDays: 7);
+
+            Assert.False(File.Exists(old));
+        }
+        finally { Delete(directory); }
+    }
+
+    [Fact]
+    public void Keeps_only_the_newest_files()
+    {
+        var directory = TestDirectory();
+        try
+        {
+            Directory.CreateDirectory(directory);
+            for (var i = 0; i < 5; i++)
+            {
+                var path = Path.Combine(directory, $"agent-2026010{i + 1}.log");
+                File.WriteAllText(path, $"file {i}");
+                File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddMinutes(i));
+            }
+
+            using var provider = new FileLoggerProvider(directory, LogLevel.Information, maxFiles: 3);
+
+            Assert.Equal(3, Directory.GetFiles(directory, "agent-*.log").Length);
+        }
+        finally { Delete(directory); }
+    }
+
+    private static string TestDirectory() =>
+        Path.Combine(Path.GetTempPath(), "pazscan-log-tests", Guid.NewGuid().ToString("N"));
+
+    private static void Delete(string directory)
+    {
+        try { if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
 }

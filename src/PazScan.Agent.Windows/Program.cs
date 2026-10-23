@@ -1,7 +1,9 @@
+using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 using NAPS2.Images.Gdi;
 using NAPS2.Scan;
 using PazScan.Core;
+using PazScan.Core.Http;
 using PazScan.Core.Logging;
 using PazScan.Core.Scanning;
 
@@ -47,10 +49,17 @@ internal static class Program
         var options = AgentOptions.Load(AppContext.BaseDirectory);
         options.TempPath ??= Path.Combine(DataDirectory, "scans");
 
+        logger.LogInformation("Paz Scan Agent {Version} starting", AgentApi.Version);
+        logger.LogInformation("Platform {Platform}; data {Data}; logs {Logs}",
+            RuntimeInformation.OSDescription, DataDirectory, logs.Directory);
+        logger.LogInformation("Settings: port {Port}; allowed origins {Origins}; temp {Temp}",
+            options.Port, string.Join(", ", options.EffectiveAllowedOrigins), options.EffectiveTempPath);
+
         using var scanning = new ScanningContext(new GdiImageContext());
         scanning.Logger = logs.CreateLogger("NAPS2");
         // TWAIN drivers are nearly all 32-bit; this process is 64-bit. NAPS2 runs them in its worker.
         scanning.SetUpWin32Worker();
+        logger.LogInformation("NAPS2 worker configured");
 
         var backend = new Naps2Backend(scanning, [Driver.Wia, Driver.Twain, Driver.Escl], logger);
         var app = AgentServer.Build(options, backend, logs);
@@ -75,8 +84,9 @@ internal static class Program
             logger.LogError(error, "Could not start");
         }
 
-        Application.Run(new TrayContext(options, logs.Directory, startError));
+        Application.Run(new TrayContext(options, logs.Directory, () => logs.CurrentFile, startError));
 
+        logger.LogInformation("Paz Scan Agent stopping");
         using var stopping = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         app.StopAsync(stopping.Token).GetAwaiter().GetResult();
         return 0;

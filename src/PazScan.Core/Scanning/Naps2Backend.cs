@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
@@ -34,24 +35,32 @@ public sealed class Naps2Backend : IScanBackend
         _controller = new ScanController(context) { PropagateErrors = true };
         _drivers = drivers;
         _logger = logger;
+        _logger.LogInformation("Scanner drivers: {Drivers}", string.Join(", ", _drivers.Select(DriverName)));
     }
 
     public IReadOnlyList<string> Drivers => _drivers.Select(DriverName).ToList();
 
     public async Task<IReadOnlyList<DeviceInfo>> ListDevicesAsync(CancellationToken cancellationToken)
     {
+        _logger.LogInformation("Listing scanners");
         var perDriver = await Task.WhenAll(_drivers.Select(async driver =>
         {
+            var started = Stopwatch.GetTimestamp();
             try
             {
                 var options = new ScanOptions { Driver = driver };
                 options.EsclOptions.SearchTimeout = NetworkSearchMilliseconds;
-                return await _controller.GetDeviceList(options);
+                var found = await _controller.GetDeviceList(options);
+                _logger.LogInformation("{Driver} listed {Count} scanner(s) in {Elapsed:0.0} ms: {Devices}",
+                    driver, found.Count, Stopwatch.GetElapsedTime(started).TotalMilliseconds,
+                    string.Join(", ", found.Select(device => device.Name)));
+                return found;
             }
             catch (Exception error)
             {
                 // A driver that is not installed (no TWAIN DSM, say) must not hide the others.
-                _logger.LogWarning(error, "Listing {Driver} scanners failed", driver);
+                _logger.LogWarning(error, "Listing {Driver} scanners failed after {Elapsed:0.0} ms",
+                    driver, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
                 return new List<ScanDevice>();
             }
         }));
@@ -63,23 +72,42 @@ public sealed class Naps2Backend : IScanBackend
             _known[id] = device;
             devices.Add(new DeviceInfo(id, device.Name, DriverName(device.Driver), device.Driver == Driver.Escl));
         }
+
+        if (devices.Count == 0)
+        {
+            _logger.LogWarning("No scanners found. WIA and TWAIN need a Windows scanner driver; eSCL scanners must advertise themselves over mDNS. A printer that Windows only shows in the Add printer list has no scan driver yet.");
+        }
+        else
+        {
+            _logger.LogInformation("Found {Count} scanner(s): {Devices}", devices.Count,
+                string.Join("; ", devices.Select(device => $"{device.Name} [{device.Driver}]")));
+        }
         return devices;
     }
 
     public async Task<DeviceCaps?> GetCapsAsync(string deviceId, CancellationToken cancellationToken)
     {
         var device = await ResolveAsync(deviceId, cancellationToken);
-        if (device is null) return null;
+        if (device is null)
+        {
+            _logger.LogWarning("Capabilities requested for unknown scanner {DeviceId}", deviceId);
+            return null;
+        }
         try
         {
+            _logger.LogInformation("Reading capabilities of {Device} ({Driver})", device.Name, device.Driver);
             var caps = await _controller.GetCaps(device, cancellationToken);
-            return ToCaps(caps);
+            var result = ToCaps(caps);
+            _logger.LogInformation("Capabilities of {Device}: flatbed {Flatbed}, feeder {Feeder}, duplex {Duplex}, dpis {Dpis}",
+                device.Name, result.Flatbed, result.Feeder, result.Duplex,
+                result.Dpis is { Count: > 0 } ? string.Join(",", result.Dpis) : "unknown");
+            return result;
         }
         catch (Exception error) when (error is not OperationCanceledException)
         {
             // Not every driver can say. The web app then offers every option and the scan itself
             // reports what the scanner refused.
-            _logger.LogInformation(error, "Capabilities of {Device} unavailable", device.Name);
+            _logger.LogWarning(error, "Capabilities of {Device} unavailable", device.Name);
             return new DeviceCaps(null, null, null, null, null, null, null, null, null);
         }
     }
@@ -119,10 +147,17 @@ public sealed class Naps2Backend : IScanBackend
         _logger.LogInformation("Scanning from {Device} ({Driver}): {Source}, {Color}, {Dpi} dpi, {PageSize}",
             device.Name, device.Driver, settings.Source, settings.Color, settings.Dpi, settings.PageSize);
 
+        var page = 0;
         await foreach (var image in _controller.Scan(options, cancellationToken))
         {
-            yield return new Naps2ScannedImage(_context, image, settings);
+            var scanned = new Naps2ScannedImage(_context, image, settings);
+            page++;
+            _logger.LogInformation("Scanner {Device} produced page {Page}: {Width}x{Height} at {Dpi} dpi, {ContentType}, side {Side}",
+                device.Name, page, scanned.Width, scanned.Height, scanned.Dpi, scanned.ContentType,
+                scanned.Side?.ToString() ?? "single");
+            yield return scanned;
         }
+        _logger.LogInformation("Scanner {Device} finished after {Pages} page(s)", device.Name, page);
     }
 
     private async Task<ScanDevice?> ResolveAsync(string deviceId, CancellationToken cancellationToken)
@@ -132,6 +167,7 @@ public sealed class Naps2Backend : IScanBackend
         if (!_drivers.Any(driver => DriverName(driver) == driverName) || nativeId.Length == 0) return null;
 
         // Restarted since the browser listed the scanners: look again.
+        _logger.LogInformation("Scanner {DeviceId} is not in the last listing; searching again", deviceId);
         await ListDevicesAsync(cancellationToken);
         return _known.GetValueOrDefault(deviceId);
     }

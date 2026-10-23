@@ -40,6 +40,18 @@ There are three demo scanners:
 - **Demo folder** feeds the PNG and JPEG files in the `--pages` folder. Put in a photo of a printed
   separator sheet to try splitting.
 
+## Logs
+
+The agent writes to `%LOCALAPPDATA%\Paz Scan Agent\logs\agent-YYYYMMDD.log`. A log rotates to
+`agent-YYYYMMDD-1.log`, `-2` and so on at 5 MB; files older than 7 days are removed, and at most
+20 are kept. The tray menu has **View live logs**, which tails the current file, and **Open logs
+folder**.
+
+Every HTTP request, scanner listing, capability query, scan and scanned page (path, size, type,
+dimensions, DPI and side) is logged. If Windows shows a printer but the agent lists no scanner,
+install the manufacturer's scanner driver or software: a print-only queue has no WIA/TWAIN scanner
+behind it, and eSCL scanners must advertise themselves over mDNS.
+
 ## Release
 
 ```sh

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using PazScan.Core.Scanning;
 
@@ -65,12 +66,14 @@ public sealed class ScanSession
 
     private async Task RunAsync(IScanBackend backend, ILogger logger)
     {
+        var started = Stopwatch.GetTimestamp();
         try
         {
             await foreach (var image in backend.ScanAsync(Settings, _cancel.Token))
             {
                 using (image)
                 {
+                    var pageStarted = Stopwatch.GetTimestamp();
                     int index;
                     lock (_gate) index = _pages.Count;
 
@@ -82,13 +85,15 @@ public sealed class ScanSession
                     await using (var stream = File.Create(preview))
                         await image.SavePreviewAsync(stream, _cancel.Token);
 
+                    var fullBytes = new FileInfo(full).Length;
+                    var previewBytes = new FileInfo(preview).Length;
                     var page = new ScanPageInfo(
                         index,
                         image.Width,
                         image.Height,
                         image.Dpi,
                         image.ContentType,
-                        new FileInfo(full).Length,
+                        fullBytes,
                         image.Side switch { PageSide.Front => "front", PageSide.Back => "back", _ => null });
                     // Published only once both files are complete, so a poll never sees a half-written page.
                     lock (_gate)
@@ -96,14 +101,20 @@ public sealed class ScanSession
                         _pages.Add(page);
                         _previewTypes.Add(image.PreviewContentType);
                     }
+
+                    logger.LogInformation("Scan {Id} page {Index}: {Width}x{Height} at {Dpi} dpi, {ContentType}, side {Side}, {Bytes} bytes in {File}; preview {PreviewBytes} bytes in {Preview}; {Elapsed:0.0} ms",
+                        Id, index, page.Width, page.Height, page.Dpi, page.ContentType, page.Side ?? "single",
+                        fullBytes, full, previewBytes, preview, Stopwatch.GetElapsedTime(pageStarted).TotalMilliseconds);
                 }
             }
             // NAPS2 ends a cancelled scan quietly rather than throwing.
             Finish(_cancel.IsCancellationRequested ? "cancelled" : "done", null);
+            LogFinished(logger, started);
         }
         catch (OperationCanceledException) when (_cancel.IsCancellationRequested)
         {
             Finish("cancelled", null);
+            LogFinished(logger, started);
         }
         catch (Exception error)
         {
@@ -113,12 +124,30 @@ public sealed class ScanSession
             // An empty feeder after some pages is how a stack ends on some drivers, not a failure.
             if (info.Code == "FEEDER_EMPTY" && pages > 0)
             {
+                logger.LogInformation("Scan {Id}: feeder empty after {Pages} page(s); treating the stack as finished", Id, pages);
                 Finish("done", null);
+                LogFinished(logger, started);
                 return;
             }
-            logger.LogWarning(error, "Scan {Id} failed after {Pages} pages: {Code}", Id, pages, info.Code);
+            logger.LogWarning(error, "Scan {Id} failed after {Pages} page(s) in {Elapsed:0.0} ms: {Code}",
+                Id, pages, Stopwatch.GetElapsedTime(started).TotalMilliseconds, info.Code);
             Finish("failed", info);
         }
+    }
+
+    private void LogFinished(ILogger logger, long started)
+    {
+        int pages;
+        long bytes;
+        string state;
+        lock (_gate)
+        {
+            pages = _pages.Count;
+            bytes = _pages.Sum(page => page.Bytes);
+            state = _state;
+        }
+        logger.LogInformation("Scan {Id} {State}: {Pages} page(s), {Bytes} bytes, {Elapsed:0.0} ms",
+            Id, state, pages, bytes, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
     }
 
     private void Finish(string state, ScanErrorInfo? error)

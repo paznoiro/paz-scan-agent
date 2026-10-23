@@ -9,9 +9,14 @@ internal sealed class TrayContext : ApplicationContext
 {
     private readonly NotifyIcon _icon;
     private readonly ToolStripMenuItem _startWithWindows;
+    private readonly string _logDirectory;
+    private readonly Func<string?> _currentLogFile;
+    private LogViewerForm? _logViewer;
 
-    public TrayContext(AgentOptions options, string logDirectory, string? startError)
+    public TrayContext(AgentOptions options, string logDirectory, Func<string?> currentLogFile, string? startError)
     {
+        _logDirectory = logDirectory;
+        _currentLogFile = currentLogFile;
         var status = startError ?? $"Running on port {options.Port}";
 
         _startWithWindows = new ToolStripMenuItem("Start with Windows")
@@ -30,7 +35,8 @@ internal sealed class TrayContext : ApplicationContext
         menu.Items.Add(new ToolStripMenuItem(status) { Enabled = false });
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_startWithWindows);
-        menu.Items.Add("Open logs", null, (_, _) => Open(logDirectory));
+        menu.Items.Add("View live logs", null, (_, _) => ShowLogs());
+        menu.Items.Add("Open logs folder", null, (_, _) => Open(logDirectory));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) => ExitThread());
 
@@ -48,9 +54,26 @@ internal sealed class TrayContext : ApplicationContext
 
     protected override void ExitThreadCore()
     {
+        if (_logViewer is { IsDisposed: false }) _logViewer.Close();
+        _logViewer = null;
         _icon.Visible = false;
         _icon.Dispose();
         base.ExitThreadCore();
+    }
+
+    private void ShowLogs()
+    {
+        if (_logViewer is { IsDisposed: false })
+        {
+            if (_logViewer.WindowState == FormWindowState.Minimized)
+                _logViewer.WindowState = FormWindowState.Normal;
+            _logViewer.Activate();
+            return;
+        }
+
+        _logViewer = new LogViewerForm(_logDirectory, _currentLogFile);
+        _logViewer.FormClosed += (_, _) => _logViewer = null;
+        _logViewer.Show();
     }
 
     private static Icon LoadIcon()

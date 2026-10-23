@@ -53,6 +53,8 @@ public sealed class ScanSessionManager : IDisposable
             var id = Guid.NewGuid().ToString("N");
             var directory = Path.Combine(_root, id);
             Directory.CreateDirectory(directory);
+            _logger.LogInformation("Scan {Id} starting: device {DeviceId}, {Source}, {Color}, {Dpi} dpi, {PageSize}, deskew {Deskew}, quality {Quality}, folder {Directory}",
+                id, settings.DeviceId, settings.Source, settings.Color, settings.Dpi, settings.PageSize, settings.Deskew, settings.Quality, directory);
             var session = new ScanSession(id, directory, settings);
             _sessions[id] = session;
             session.Start(_backend, _logger);
