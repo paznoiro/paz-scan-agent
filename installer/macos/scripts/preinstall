@@ -1,0 +1,26 @@
+#!/bin/sh
+# Runs as root before the package's files are copied. Stops every running agent, as the Windows
+# installer does, so nobody keeps running an app whose files are being replaced. postinstall starts
+# it again. Never fails the install: at worst the old agent keeps running until the next login.
+
+label=com.paznoiro.pazscanagent
+
+# Agents launchd started (in any user's session); KeepAlive would restart a plain kill.
+for pid in $(pgrep -x PazScanAgent); do
+  ps -o uid= -p "$pid"
+done | sort -u | while read -r uid; do
+  launchctl bootout "gui/$uid/$label" 2>/dev/null || true
+done
+
+# One started from a terminal is not a launchd job.
+pkill -x PazScanAgent 2>/dev/null || true
+
+# Its shutdown takes a few seconds at most.
+i=0
+while pgrep -x PazScanAgent >/dev/null && [ "$i" -lt 20 ]; do
+  sleep 0.5
+  i=$((i + 1))
+done
+pkill -9 -x PazScanAgent 2>/dev/null || true
+
+exit 0

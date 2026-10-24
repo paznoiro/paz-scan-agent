@@ -1,0 +1,47 @@
+#!/bin/sh
+# Once the files are in place: start the agent again for everyone prerm stopped it for, and on a
+# fresh install from a terminal (sudo apt install ./paz-scan-agent_*.deb) for whoever ran sudo, as
+# the Windows installer does. Everyone else gets it at their next desktop login, from
+# /etc/xdg/autostart. Never fails.
+
+exe=/opt/paz-scan-agent/PazScanAgent
+state=/run/paz-scan-agent.users
+
+start_for() { # user name
+  case "$1" in "" | root) return 0 ;; esac
+  home=$(getent passwd "$1" | cut -d: -f6)
+  [ -n "$home" ] && [ -d "$home" ] || return 0
+
+  # In the user's own service manager when it is running. Started from here, the agent would belong
+  # to apt's or the updater's service, and systemd stops everything in it when that ends.
+  if command -v systemd-run > /dev/null 2>&1 &&
+    systemd-run --user --machine="$1@" --quiet --collect "$exe" > /dev/null 2>&1; then
+    return 0
+  fi
+
+  # No systemd (a container), or the user is not logged in: a detached process, in a clean
+  # environment as a login would give, with nothing of root's, apt's or sudo's.
+  runuser -u "$1" -- env -i HOME="$home" USER="$1" LOGNAME="$1" PATH=/usr/local/bin:/usr/bin:/bin \
+    LANG="${LANG:-C.UTF-8}" setsid -f "$exe" < /dev/null > /dev/null 2>&1 || true
+}
+
+case "$1" in
+  configure | abort-upgrade | abort-remove | abort-deconfigure)
+    users=""
+    if [ -f "$state" ]; then
+      users=$(cat "$state")
+      rm -f "$state"
+    fi
+    # $2 is the version configured before; none means a fresh install.
+    if [ "$1" = configure ] && [ -z "$2" ]; then
+      [ -n "${SUDO_USER:-}" ] && users="$users $SUDO_USER"
+      [ -n "${PKEXEC_UID:-}" ] && users="$users $(getent passwd "$PKEXEC_UID" | cut -d: -f1)"
+    fi
+    # shellcheck disable=SC2086 # one name per word
+    for user in $(printf '%s\n' $users | sort -u); do
+      start_for "$user"
+    done
+    ;;
+esac
+
+exit 0

@@ -13,7 +13,8 @@ namespace PazScan.Core.Scanning;
 /// Real scanners, through NAPS2.Sdk.
 ///
 /// <para>The host builds the <see cref="ScanningContext"/> because only it knows the platform: on
-/// Windows that is a GDI image context plus the 32-bit worker TWAIN drivers need.</para>
+/// Windows that is a GDI image context plus the 32-bit worker TWAIN drivers need; on macOS and
+/// Linux it is ImageSharp plus SANE and eSCL.</para>
 /// </summary>
 public sealed class Naps2Backend : IScanBackend
 {
@@ -24,6 +25,12 @@ public sealed class Naps2Backend : IScanBackend
     private readonly ScanController _controller;
     private readonly IReadOnlyList<Driver> _drivers;
     private readonly ILogger _logger;
+
+    // SANE's first enumeration can take half a minute. A call that arrives while a search is running
+    // (the start-up warm-up, another tab) shares that search instead of queueing a second one, so two
+    // searches never run through the same ScanningContext at once.
+    private readonly object _listingGate = new();
+    private Task<IReadOnlyList<DeviceInfo>>? _listing;
 
     // A network scanner's id says nothing about where it is; its connection URI comes from discovery.
     // Kept from the last listing so a scan does not have to search the network again.
@@ -40,7 +47,20 @@ public sealed class Naps2Backend : IScanBackend
 
     public IReadOnlyList<string> Drivers => _drivers.Select(DriverName).ToList();
 
-    public async Task<IReadOnlyList<DeviceInfo>> ListDevicesAsync(CancellationToken cancellationToken)
+    public Task<IReadOnlyList<DeviceInfo>> ListDevicesAsync(CancellationToken cancellationToken)
+    {
+        Task<IReadOnlyList<DeviceInfo>> listing;
+        lock (_listingGate)
+        {
+            // Task.Run: a driver's synchronous start must not run while the gate is held.
+            if (_listing is null || _listing.IsCompleted) _listing = Task.Run(SearchAsync);
+            listing = _listing;
+        }
+        // Cancelling stops this caller waiting; the search itself finishes for whoever else shares it.
+        return listing.WaitAsync(cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<DeviceInfo>> SearchAsync()
     {
         _logger.LogInformation("Listing scanners");
         var perDriver = await Task.WhenAll(_drivers.Select(async driver =>
@@ -58,7 +78,7 @@ public sealed class Naps2Backend : IScanBackend
             }
             catch (Exception error)
             {
-                // A driver that is not installed (no TWAIN DSM, say) must not hide the others.
+                // A driver that is not installed (no TWAIN DSM, no libsane) must not hide the others.
                 _logger.LogWarning(error, "Listing {Driver} scanners failed after {Elapsed:0.0} ms",
                     driver, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
                 return new List<ScanDevice>();
@@ -75,7 +95,7 @@ public sealed class Naps2Backend : IScanBackend
 
         if (devices.Count == 0)
         {
-            _logger.LogWarning("No scanners found. WIA and TWAIN need a Windows scanner driver; eSCL scanners must advertise themselves over mDNS. A printer that Windows only shows in the Add printer list has no scan driver yet.");
+            _logger.LogWarning("No scanners found. USB scanners need a driver: WIA or TWAIN on Windows, SANE on macOS and Linux. Network eSCL scanners must advertise themselves over mDNS. A printer that the system only shows in its Add printer list has no scan driver yet.");
         }
         else
         {

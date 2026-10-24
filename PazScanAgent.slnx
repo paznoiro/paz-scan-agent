@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/PazScan.Agent.Console/PazScan.Agent.Console.csproj" />
+    <Project Path="src/PazScan.Agent.Desktop/PazScan.Agent.Desktop.csproj" />
     <Project Path="src/PazScan.Agent.Windows/PazScan.Agent.Windows.csproj" />
     <Project Path="src/PazScan.Core/PazScan.Core.csproj" />
   </Folder>

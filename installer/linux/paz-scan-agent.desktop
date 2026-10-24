@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Paz Scan Agent
+Comment=Start the local scanner bridge for Paz
+Exec=/opt/paz-scan-agent/PazScanAgent
+Icon=paz-scan-agent
+Terminal=false
+Categories=Graphics;Scanning;

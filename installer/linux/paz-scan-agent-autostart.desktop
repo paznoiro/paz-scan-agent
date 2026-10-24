@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Paz Scan Agent
+Comment=Local scanner bridge for Paz
+Exec=/opt/paz-scan-agent/PazScanAgent
+Icon=paz-scan-agent
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true

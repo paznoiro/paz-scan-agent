@@ -5,9 +5,10 @@ namespace PazScan.Core;
 /// <summary>
 /// Where the agent listens and who may talk to it.
 ///
-/// <para>Read from <c>appsettings.json</c> beside the executable, then <c>PAZSCAN_</c> environment
-/// variables (<c>PAZSCAN_Agent__Port=47400</c>). The installer ships no settings file, so a plain
-/// install runs on these defaults.</para>
+/// <para>Read from <c>appsettings.json</c> beside the executable, then from the same file in the
+/// agent's data folder, then <c>PAZSCAN_</c> environment variables
+/// (<c>PAZSCAN_Agent__Port=47400</c>). The installer ships no settings file, so a plain install runs
+/// on these defaults.</para>
 /// </summary>
 public sealed class AgentOptions
 {
@@ -54,6 +55,8 @@ public sealed class AgentOptions
         var configuration = new ConfigurationBuilder()
             .SetBasePath(baseDirectory)
             .AddJsonFile("appsettings.json", optional: true)
+            // A settings file in the data folder survives replacing the app bundle or tarball.
+            .AddJsonFile(Path.Combine(AgentPaths.DataDirectory, "appsettings.json"), optional: true)
             .AddEnvironmentVariables("PAZSCAN_")
             .Build();
         var options = new AgentOptions();
