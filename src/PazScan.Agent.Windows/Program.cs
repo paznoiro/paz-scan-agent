@@ -21,9 +21,6 @@ internal static class Program
     /// <summary>One agent per signed-in user; a second start exits at once.</summary>
     internal const string MutexName = "PazScanAgent";
 
-    internal static string DataDirectory { get; } =
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Paz Scan Agent");
-
     [STAThread]
     private static int Main(string[] args)
     {
@@ -44,14 +41,14 @@ internal static class Program
 
         ApplicationConfiguration.Initialize();
 
-        var logs = new FileLoggerProvider(Path.Combine(DataDirectory, "logs"));
+        var logs = new FileLoggerProvider(AgentPaths.LogDirectory);
         var logger = logs.CreateLogger("PazScan.Agent");
         var options = AgentOptions.Load(AppContext.BaseDirectory);
-        options.TempPath ??= Path.Combine(DataDirectory, "scans");
+        options.TempPath ??= AgentPaths.ScanDirectory;
 
         logger.LogInformation("Paz Scan Agent {Version} starting", AgentApi.Version);
         logger.LogInformation("Platform {Platform}; data {Data}; logs {Logs}",
-            RuntimeInformation.OSDescription, DataDirectory, logs.Directory);
+            RuntimeInformation.OSDescription, AgentPaths.DataDirectory, logs.Directory);
         logger.LogInformation("Settings: port {Port}; allowed origins {Origins}; temp {Temp}",
             options.Port, string.Join(", ", options.EffectiveAllowedOrigins), options.EffectiveTempPath);
 

@@ -1,0 +1,41 @@
+#!/bin/sh
+# Before the package's files are replaced or removed: stop every agent running from them, as the
+# Windows installer does, so nobody keeps running an agent half of whose files are new. On an upgrade
+# it notes whose agent it stopped, and postinst starts it again for them. Never fails.
+
+exe=/opt/paz-scan-agent/PazScanAgent
+state=/run/paz-scan-agent.users
+
+# By name (started through /usr/bin/paz-scan-agent, that is its name), then by executable, so a copy
+# unpacked elsewhere is left alone. In a container without CAP_SYS_PTRACE even root cannot read
+# another user's exe link; the name has to do there.
+agent_pids() {
+  for proc in /proc/[0-9]*; do
+    case "$(cat "$proc/comm" 2> /dev/null)" in PazScanAgent | paz-scan-agent) ;; *) continue ;; esac
+    path=$(readlink "$proc/exe" 2> /dev/null) || path=$exe
+    [ "$path" = "$exe" ] && echo "${proc#/proc/}"
+  done
+}
+
+case "$1" in
+  remove|upgrade|deconfigure|failed-upgrade)
+    pids=$(agent_pids)
+    [ -n "$pids" ] || exit 0
+    if [ "$1" != remove ]; then
+      { for pid in $pids; do stat -c %U "/proc/$pid"; done | sort -u > "$state"; } 2>/dev/null || true
+    fi
+    # SIGTERM: it finishes what it is sending and stops within a few seconds.
+    # shellcheck disable=SC2086 # $pids is a list
+    kill -TERM $pids 2>/dev/null || true
+    i=0
+    while [ -n "$(agent_pids)" ] && [ "$i" -lt 20 ]; do
+      sleep 0.5
+      i=$((i + 1))
+    done
+    pids=$(agent_pids)
+    # shellcheck disable=SC2086
+    [ -z "$pids" ] || kill -KILL $pids 2>/dev/null || true
+    ;;
+esac
+
+exit 0

@@ -1,0 +1,35 @@
+#!/bin/sh
+# Runs as root once the app and its LaunchAgent are in place. launchd starts the agent at each later
+# login; this starts it now for everyone already logged in, as the Windows installer does. Never
+# fails the install: at worst the agent starts at the next login.
+
+label=com.paznoiro.pazscanagent
+plist="/Library/LaunchAgents/$label.plist"
+
+# Everyone with a desktop session: the console owner plus fast-user-switched sessions.
+users=$( (stat -f%Su /dev/console 2>/dev/null; who | awk '$2 == "console" { print $1 }') | sort -u)
+
+for user in $users; do
+  case "$user" in root | _* | "") continue ;; esac
+  uid=$(id -u "$user" 2>/dev/null) || continue
+
+  # Someone who turned it off (PazScanAgent --unregister-startup) keeps it off.
+  if launchctl print-disabled "gui/$uid" 2>/dev/null | grep -Eq "\"$label\" => (true|disabled)"; then
+    continue
+  fi
+
+  # A copy registered by hand (--register-startup) has the same label; this package's one replaces it.
+  home=$(dscl . -read "/Users/$user" NFSHomeDirectory 2>/dev/null | sed -n 's/^NFSHomeDirectory: //p')
+  [ -n "$home" ] && rm -f "$home/Library/LaunchAgents/$label.plist"
+
+  launchctl bootout "gui/$uid/$label" 2>/dev/null || true
+  # Straight after a bootout launchd can refuse for a moment ("5: Input/output error").
+  n=0
+  until launchctl bootstrap "gui/$uid" "$plist" 2>/dev/null; do
+    n=$((n + 1))
+    [ "$n" -ge 10 ] && break
+    sleep 0.5
+  done
+done
+
+exit 0

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The package's LaunchAgent: launchd starts the agent at every user's login, in that user's session.
+  Kept in step with MacPlist() in src/PazScan.Agent.Desktop/StartupRegistration.cs, which writes the
+  same job for a copy of the app that was not installed from the package.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.paznoiro.pazscanagent</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Applications/Paz Scan Agent.app/Contents/MacOS/PazScanAgent</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>ProcessType</key>
+  <string>Interactive</string>
+</dict>
+</plist>
