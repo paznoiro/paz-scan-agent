@@ -19,6 +19,8 @@ public sealed class AgentOptions
     /// <summary>
     /// Every host the Paz web app is served from. <c>*.</c> stands for one or more subdomain labels, so a
     /// tenant's own subdomain is covered; <c>:*</c> for any port, which is what local development needs.
+    /// <c>localhost</c> and <c>127.0.0.1</c> are both this computer: a page served from either is as
+    /// trusted as the agent itself.
     /// </summary>
     public static readonly IReadOnlyList<string> DefaultAllowedOrigins =
     [
@@ -27,6 +29,7 @@ public sealed class AgentOptions
         "https://*.vanix.com",
         "https://*.vanix.store",
         "http://127.0.0.1:*",
+        "http://localhost:*",
     ];
 
     public int Port { get; set; } = DefaultPort;

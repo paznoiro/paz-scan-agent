@@ -17,6 +17,7 @@ public class OriginPolicyTests
     [InlineData("https://shop.vanix.com")]
     [InlineData("https://demohrms.vanix.store")]
     [InlineData("http://127.0.0.1:3006")]
+    [InlineData("http://localhost:3000")]
     public void Allows_every_place_Paz_is_served_from(string origin) => Assert.True(Defaults.IsAllowed(origin));
 
     [Theory]
@@ -28,7 +29,8 @@ public class OriginPolicyTests
     [InlineData("https://app.zaporion.com:8443")] // a port the pattern does not name
     [InlineData("https://evilzaporion.com")]
     [InlineData("https://zaporion.com.evil.example")]
-    [InlineData("http://localhost:3000")] // no longer listed
+    [InlineData("https://localhost:3000")] // loopback is listed over http only
+    [InlineData("http://localhost.evil.example:3000")]
     [InlineData("https://app.zaporion.com/path")]
     [InlineData("null")]
     [InlineData("")]
