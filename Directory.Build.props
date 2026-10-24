@@ -1,6 +1,6 @@
 <Project>
   <PropertyGroup>
-    <Version>1.2.0</Version>
+    <Version>1.2.1</Version>
     <Product>Paz Scan Agent</Product>
     <Company>PazNoiro</Company>
     <LangVersion>latest</LangVersion>

@@ -71,7 +71,7 @@ internal sealed class TrayContext : ApplicationContext
             return;
         }
 
-        _logViewer = new LogViewerForm(_logDirectory, _currentLogFile);
+        _logViewer = new LogViewerForm(_logDirectory, _currentLogFile) { Icon = _icon.Icon };
         _logViewer.FormClosed += (_, _) => _logViewer = null;
         _logViewer.Show();
     }

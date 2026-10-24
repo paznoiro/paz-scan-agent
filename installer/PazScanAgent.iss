@@ -42,7 +42,7 @@ WizardStyle=modern
 Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{userprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"
+Name: "{userprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"; IconFilename: "{app}\{#AppExe}"; IconIndex: 0
 
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "PazScanAgent"; ValueData: """{app}\{#AppExe}"""; Flags: uninsdeletevalue

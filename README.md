@@ -54,6 +54,10 @@ behind it, and eSCL scanners must advertise themselves over mDNS.
 
 ## Release
 
+The application, tray, log window, installer, and shortcuts use the artwork in
+`assets/paz-scan-agent.png`. After replacing it, run `scripts\update-icon.ps1` on Windows
+to regenerate `assets/icon.png` and the multi-resolution `src/PazScan.Agent.Windows/app.ico`.
+
 ```sh
 ./scripts/publish-windows.sh          # → artifacts/win-x64 (self-contained, ~160 MB unpacked)
 ```
