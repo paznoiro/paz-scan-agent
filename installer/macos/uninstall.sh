@@ -20,6 +20,8 @@ for uid in $users_uids; do
   launchctl bootout "gui/$uid/$label" 2>/dev/null || true
 done
 pkill -x PazScanAgent 2>/dev/null || true
+# The menu bar icon exits with its agent; this is for one left behind.
+pkill -x PazScanMenuBar 2>/dev/null || true
 
 rm -f "/Library/LaunchAgents/$label.plist"
 rm -rf "/Applications/Paz Scan Agent.app"

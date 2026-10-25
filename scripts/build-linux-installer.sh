@@ -6,9 +6,9 @@
 #   ./scripts/build-linux-installer.sh arm64
 #
 # The package installs the agent into /opt/paz-scan-agent (and /usr/bin/paz-scan-agent), starts it
-# at every user's desktop login (/etc/xdg/autostart), pulls in SANE, and restarts running agents
-# across upgrades. Needs the .NET 10 SDK and dpkg-deb: any Debian or Ubuntu has it; on macOS,
-# `brew install dpkg`.
+# at every user's desktop login (/etc/xdg/autostart), pulls in SANE and what the tray icon needs, and
+# restarts running agents across upgrades. Needs the .NET 10 SDK and dpkg-deb: any Debian or Ubuntu
+# has it; on macOS, `brew install dpkg`.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -45,6 +45,8 @@ installed_kb=$(du -sk "$root/opt" "$root/usr" "$root/etc" | awk '{ total += $1 }
 
 # libsane1 brings the USB backends and their udev rules. The .NET runtime inside also loads the
 # system's ICU and OpenSSL, which every desktop distribution has; see the README for minimal ones.
+# Recommends: the tray icon (PazScanTray.py: GTK 3 and AppIndicator from python3). apt installs them
+# by default; a server installed without them runs the agent without an icon.
 cat > "$root/DEBIAN/control" <<EOF
 Package: paz-scan-agent
 Version: $deb_version
@@ -52,13 +54,15 @@ Architecture: $deb_arch
 Maintainer: PazNoiro
 Installed-Size: $installed_kb
 Depends: libsane1 | libsane
+Recommends: python3, python3-gi, gir1.2-gtk-3.0, gir1.2-ayatanaappindicator3-0.1
 Section: graphics
 Priority: optional
 Homepage: https://github.com/paznoiro/paz-scan-agent
 Description: Local scanner bridge for the Paz web app
  Lets the Paz web app use the scanner on this computer: USB scanners through
  SANE and network scanners through eSCL (AirScan). It answers only on
- http://127.0.0.1:47316 and starts at every desktop login.
+ http://127.0.0.1:47316, starts at every desktop login and shows an icon in
+ the tray with its status and live log.
 EOF
 
 dpkg-deb --root-owner-group -Zxz --build "$root" "$setup"

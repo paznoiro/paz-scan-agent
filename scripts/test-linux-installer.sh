@@ -92,6 +92,8 @@ check "it is on the PATH" test "$(readlink -f /usr/bin/paz-scan-agent)" = "$exe"
 check "it starts at every desktop login" test -f "$autostart"
 check "it has a menu entry" test -f /usr/share/applications/paz-scan-agent.desktop
 check "SANE came with it" dpkg-query -W libsane1
+check "so did the tray icon's GTK and AppIndicator" dpkg-query -W python3-gi gir1.2-gtk-3.0 gir1.2-ayatanaappindicator3-0.1
+check "the tray icon is beside the agent" test -f /opt/paz-scan-agent/PazScanTray.py
 
 step "Talking to the agent the package started for $user"
 wait_agent "$default_port"

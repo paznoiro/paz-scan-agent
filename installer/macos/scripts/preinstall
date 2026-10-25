@@ -22,5 +22,7 @@ while pgrep -x PazScanAgent >/dev/null && [ "$i" -lt 20 ]; do
   i=$((i + 1))
 done
 pkill -9 -x PazScanAgent 2>/dev/null || true
+# The menu bar icon exits with its agent; this is for one left behind.
+pkill -x PazScanMenuBar 2>/dev/null || true
 
 exit 0
