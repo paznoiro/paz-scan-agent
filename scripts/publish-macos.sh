@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Builds the macOS agent as a background .app bundle (self-contained: no .NET needed to run it).
+# Builds the macOS agent as a menu bar .app bundle (self-contained: no .NET needed to run it).
 #   ./scripts/publish-macos.sh            # this machine's architecture
 #   ./scripts/publish-macos.sh arm64      # Apple Silicon
 #   ./scripts/publish-macos.sh x64        # Intel
-# Run it on a Mac: the SDK ad-hoc signs the executable there, and Apple Silicon runs nothing unsigned.
+# Run it on a Mac with the Xcode Command Line Tools (xcode-select --install): the SDK ad-hoc signs the
+# executable there, Apple Silicon runs nothing unsigned, and swiftc builds the menu bar icon.
 # The installer package around it: scripts/build-macos-installer.sh.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -27,6 +28,9 @@ dotnet publish src/PazScan.Agent.Desktop -c Release -r "$rid" --self-contained t
   -o "$app/Contents/MacOS" -p:DebugType=none -p:GenerateDocumentationFile=false \
   -p:Version="$version"
 
+# The menu bar icon (src/PazScan.Agent.Desktop/MenuBar), which the publish builds beside the agent.
+test -x "$app/Contents/MacOS/PazScanMenuBar" || { echo "PazScanMenuBar is missing from the publish output" >&2; exit 1; }
+
 # The icon Finder and System Settings → Login Items show.
 iconset="$out/AppIcon.iconset"
 mkdir -p "$iconset"
@@ -38,6 +42,8 @@ iconutil -c icns "$iconset" -o "$app/Contents/Resources/AppIcon.icns"
 rm -rf "$iconset"
 
 # LSMinimumSystemVersion: the .NET runtime's own minimum (otool -l libcoreclr.dylib | grep minos).
+# LSUIElement: no Dock icon or app menu. The agent has no windows; its menu bar icon (PazScanMenuBar,
+# in the same bundle) has the menu and the log window.
 cat > "$app/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -61,7 +67,7 @@ cat > "$app/Contents/Info.plist" <<EOF
   <string>APPL</string>
   <key>LSMinimumSystemVersion</key>
   <string>12.0</string>
-  <key>LSBackgroundOnly</key>
+  <key>LSUIElement</key>
   <true/>
   <key>NSHighResolutionCapable</key>
   <true/>
@@ -71,12 +77,12 @@ cat > "$app/Contents/Info.plist" <<EOF
 </plist>
 EOF
 
-# Signing: every native binary inside is ad-hoc signed (the SDK signs the executable, Microsoft and
-# NAPS2 ship theirs signed), which is all Apple Silicon needs to run it. The bundle as a whole is not
-# sealed: the .NET assemblies and SANE's config sit beside the executable in Contents/MacOS, where
-# codesign expects only code. A downloaded copy is therefore blocked by Gatekeeper until allowed in
-# System Settings → Privacy & Security. Distribution without that step needs a Developer ID
-# certificate and notarization (see README).
+# Signing: every native binary inside is ad-hoc signed (the SDK signs the executable, the build signs
+# PazScanMenuBar, Microsoft and NAPS2 ship theirs signed), which is all Apple Silicon needs to run
+# it. The bundle as a whole is not sealed: the .NET assemblies and SANE's config sit beside the
+# executable in Contents/MacOS, where codesign expects only code. A downloaded copy is therefore
+# blocked by Gatekeeper until allowed in System Settings → Privacy & Security. Distribution without
+# that step needs a Developer ID certificate and notarization (see README).
 
 echo "Published to $app"
 echo "Register it to start at login:"

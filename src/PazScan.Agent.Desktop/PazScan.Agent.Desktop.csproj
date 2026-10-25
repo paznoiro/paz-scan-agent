@@ -28,4 +28,51 @@
                       Condition="$(RuntimeIdentifier.StartsWith('osx-')) Or ('$(RuntimeIdentifier)' == '' And $([MSBuild]::IsOSPlatform('OSX')))" />
   </ItemGroup>
 
+  <!-- The tray icon (TrayIcon.cs), a small program copied beside the agent on build and publish.
+       Which one depends on the platform being built for, not the one building. -->
+  <PropertyGroup>
+    <TrayRid>$(RuntimeIdentifier)</TrayRid>
+    <TrayRid Condition="'$(TrayRid)' == ''">$(NETCoreSdkRuntimeIdentifier)</TrayRid>
+    <MenuBarSwiftTarget Condition="'$(TrayRid)' == 'osx-arm64'">arm64-apple-macos12.0</MenuBarSwiftTarget>
+    <MenuBarSwiftTarget Condition="'$(TrayRid)' == 'osx-x64'">x86_64-apple-macos12.0</MenuBarSwiftTarget>
+    <BuildMenuBar Condition="'$(MenuBarSwiftTarget)' != '' And $([MSBuild]::IsOSPlatform('OSX'))">true</BuildMenuBar>
+  </PropertyGroup>
+
+  <!-- Linux: PazScanTray.py (GTK 3 and AppIndicator, run with python3) and its icon. Nothing to
+       compile, so a Linux build made on any OS has it. -->
+  <ItemGroup Condition="$(TrayRid.StartsWith('linux-'))">
+    <None Include="Tray/linux/PazScanTray.py" Link="PazScanTray.py"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="../../assets/icon.png" Link="paz-scan-agent.png"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- macOS: PazScanMenuBar, an AppKit program built from Tray/macos/*.swift for the agent's own
+       architecture. It needs swiftc from the Xcode Command Line Tools, so it is built on a Mac only. -->
+  <ItemGroup>
+    <MenuBarSource Include="Tray/macos/*.swift" />
+  </ItemGroup>
+
+  <Target Name="CompileMenuBar" Condition="'$(BuildMenuBar)' == 'true'"
+          Inputs="@(MenuBarSource);$(MSBuildProjectFullPath)" Outputs="$(IntermediateOutputPath)PazScanMenuBar">
+    <Exec Command="xcrun --sdk macosx --find swiftc" IgnoreExitCode="true" StandardOutputImportance="low" StandardErrorImportance="low">
+      <Output TaskParameter="ExitCode" PropertyName="SwiftcProbe" />
+    </Exec>
+    <Error Condition="'$(SwiftcProbe)' != '0'"
+           Text="The macOS menu bar icon is built with swiftc from the Xcode Command Line Tools. Install them with: xcode-select --install" />
+    <!-- Language mode pinned so a newer swiftc builds the same program. The linker signs only
+         arm64 binaries, so sign it here like every other native binary in the app (ad hoc). -->
+    <Exec Command="xcrun --sdk macosx swiftc -swift-version 5 -O -target $(MenuBarSwiftTarget) -o &quot;$(IntermediateOutputPath)PazScanMenuBar&quot; @(MenuBarSource->'&quot;%(FullPath)&quot;', ' ')" />
+    <Exec Command="codesign --force --sign - &quot;$(IntermediateOutputPath)PazScanMenuBar&quot;" StandardOutputImportance="low" StandardErrorImportance="low" />
+  </Target>
+
+  <Target Name="CopyMenuBar" Condition="'$(BuildMenuBar)' == 'true'" DependsOnTargets="CompileMenuBar"
+          BeforeTargets="AssignTargetPaths">
+    <ItemGroup>
+      <None Include="$(IntermediateOutputPath)PazScanMenuBar" Link="PazScanMenuBar"
+            CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+      <FileWrites Include="$(IntermediateOutputPath)PazScanMenuBar" />
+    </ItemGroup>
+  </Target>
+
 </Project>

@@ -13,9 +13,9 @@ Paz (browser) ──fetch──► 127.0.0.1:47316 ──► NAPS2.Sdk ──►
   the NAPS2 NuGet build, so it is not used.
 - **Linux:** SANE (the system's `libsane`) plus eSCL.
 - **Network scanners:** eSCL / AirScan, found over mDNS, no driver needed.
-- **Runs as:** a tray icon started at sign-in on Windows; a background process started at login on
-  macOS (LaunchAgent) and Linux (XDG autostart). It is not a Windows service, because scanner
-  drivers expect the signed-in user's desktop.
+- **Runs as:** an icon with a live log window, started at sign-in: in the tray on Windows, in the
+  menu bar on macOS (LaunchAgent), in the tray on Linux (XDG autostart). It is not a Windows
+  service, because scanner drivers expect the signed-in user's desktop.
 - **Licences:** NAPS2.Sdk is LGPL 2.1 (used unmodified, as a separate library), and its dependencies
   are MIT or Apache 2.0. The macOS/Linux build also uses ImageSharp (Six Labors Split License,
   Apache 2.0 for open-source/transitive use) and, on macOS, bundled SANE. Nothing here is paid.
@@ -30,8 +30,8 @@ platform. Each one starts the agent at login and replaces an older version in pl
 | Windows 10/11 (x64) | `PazScanAgentSetup-<version>.exe` | For the current user, no admin rights. Starts the agent now. |
 | macOS 12+, Apple silicon | `PazScanAgent-<version>-macos-arm64.pkg` | `/Applications/Paz Scan Agent.app` and a LaunchAgent for every user. Asks for an admin password. Starts the agent now for whoever is logged in. |
 | macOS 12+, Intel | `PazScanAgent-<version>-macos-x64.pkg` | The same, for Intel Macs. |
-| Debian 12+, Ubuntu 22.04+ | `paz-scan-agent_<version>_amd64.deb` or `_arm64.deb` | `/opt/paz-scan-agent`, SANE (`libsane1`), and a login start for every desktop user. `sudo apt install ./paz-scan-agent_*.deb` from a terminal also starts it now. |
-| Other Linux | `paz-scan-agent-<version>-linux-x64.tar.gz` or `-arm64` | Nothing: unpack, run `paz-scan-agent/PazScanAgent`, and `--register-startup` it. Install SANE yourself ([Linux notes](#linux)). |
+| Debian 12+, Ubuntu 22.04+ | `paz-scan-agent_<version>_amd64.deb` or `_arm64.deb` | `/opt/paz-scan-agent`, SANE (`libsane1`), GTK and AppIndicator for the tray icon, and a login start for every desktop user. `sudo apt install ./paz-scan-agent_*.deb` from a terminal also starts it now. |
+| Other Linux | `paz-scan-agent-<version>-linux-x64.tar.gz` or `-arm64` | Nothing: unpack, run `paz-scan-agent/PazScanAgent`, and `--register-startup` it. Install SANE and the tray icon's packages yourself ([Linux notes](#linux)). |
 
 None of them is signed, so the first run asks for a click:
 - **Windows:** SmartScreen says "Windows protected your PC": **More info → Run anyway**.
@@ -51,7 +51,7 @@ settings in the data folder (see [Logs](#logs)); the Windows one removes them.
 |---|---|
 | `src/PazScan.Core` | The HTTP API, origin checks, scan sessions and the NAPS2 backend. Cross-platform. |
 | `src/PazScan.Agent.Windows` | The Windows tray app (`PazScanAgent.exe`). Builds on macOS too. |
-| `src/PazScan.Agent.Desktop` | The macOS/Linux agent: same API, same logs, no tray. |
+| `src/PazScan.Agent.Desktop` | The macOS/Linux agent: same API, same logs, and an icon in the macOS menu bar or the Linux tray. The icons are small programs the agent starts beside itself: `Tray/macos/*.swift` (AppKit) and `Tray/linux/PazScanTray.py` (GTK 3 and AppIndicator). |
 | `src/PazScan.Agent.Console` | The same agent with **demo scanners**, for working on the web app without a scanner. |
 | `tests/PazScan.Core.Tests` | API and unit tests (in-memory server, demo backend). |
 | `installer/PazScanAgent.iss` | Inno Setup script: a per-user install that needs no admin rights. |
@@ -68,8 +68,10 @@ dotnet run --project src/PazScan.Agent.Console -- --pages ~/x # plus "Demo folde
 dotnet run --project src/PazScan.Agent.Desktop                # real scanners on macOS/Linux
 ```
 
-On macOS, `dotnet run` also copies the bundled SANE libraries next to the app. On Linux, install
-`libsane` first (see [Platform notes](#platform-notes)).
+On macOS, `dotnet run` also copies the bundled SANE libraries next to the app and builds the menu
+bar icon with `swiftc`, which needs the Xcode Command Line Tools (`xcode-select --install`). On
+Linux, install `libsane` first, and for the tray icon `python3-gi`, `gir1.2-gtk-3.0` and
+`gir1.2-ayatanaappindicator3-0.1` (see [Platform notes](#platform-notes)).
 
 There are three demo scanners:
 - **Demo scanner** feeds six generated pages. The fourth is blank. Scanning both sides, most backs come
@@ -90,8 +92,9 @@ The agent writes to `agent-YYYYMMDD.log` in its data folder:
 
 A log rotates to `agent-YYYYMMDD-1.log`, `-2` and so on at 5 MB; files older than 7 days are
 removed, and at most 20 are kept. The Windows tray menu has **View live logs**, which tails the
-current file, and **Open logs folder**. On macOS/Linux, run `PazScanAgent --open-logs` or tail the
-file yourself.
+current file, and **Open logs folder**; the macOS menu bar icon and the Linux tray icon have the
+same two, as **View Live Logs…** and **Open Logs Folder**. Without a desktop, run
+`PazScanAgent --open-logs` or tail the file yourself.
 
 Every HTTP request, scanner listing, capability query, scan and scanned page (path, size, type,
 dimensions, DPI and side) is logged. If the system shows a printer but the agent lists no scanner,
@@ -100,9 +103,11 @@ and eSCL scanners must advertise themselves over mDNS.
 
 ## Release
 
-The application, tray, log window, installer, and shortcuts use the artwork in
-`assets/paz-scan-agent.png`. After replacing it, run `scripts\update-icon.ps1` on Windows
-to regenerate `assets/icon.png` and the multi-resolution `src/PazScan.Agent.Windows/app.ico`.
+The application, tray icons, log windows, installers, and shortcuts use the artwork in
+`assets/paz-scan-agent.png`. The macOS menu bar icon is the system's monochrome scanner symbol
+instead, as menu bar icons are expected to be. After replacing the artwork, run
+`scripts\update-icon.ps1` on Windows to regenerate `assets/icon.png` (which the Linux tray icon
+uses too) and the multi-resolution `src/PazScan.Agent.Windows/app.ico`.
 
 All builds are self-contained, so the person running them needs no .NET installed. CI builds and
 tries every installer (see [CI](#ci)); the scripts below do the same on your machine.
@@ -135,8 +140,9 @@ then removes, any Paz Scan Agent installed for the current user.
 
 ### macOS
 
-On a Mac with the .NET 10 SDK (the SDK signs the executable there, and Apple silicon runs nothing
-unsigned, so the macOS build cannot be made on Windows or Linux):
+On a Mac with the .NET 10 SDK and the Xcode Command Line Tools (the SDK signs the executable there,
+Apple silicon runs nothing unsigned, and `swiftc` builds the menu bar icon, so the macOS build cannot
+be made on Windows or Linux):
 
 ```sh
 ./scripts/build-macos-installer.sh arm64   # → artifacts/PazScanAgent-<version>-macos-arm64.pkg (~50 MB)
@@ -215,6 +221,14 @@ removes the macOS one. Those are the only parts that would cost money, and they 
 
 ### macOS
 
+- **The menu bar icon** (a scanner) shows that the agent is running. Its menu has the version, the
+  status ("Running on port 47316", or why not), **View Live Logs…**, **Open Logs Folder** and
+  **Quit Paz Scan Agent**. The log window follows the current log file, with warnings in orange and
+  errors in red; ⌘F searches it. Quit stops the agent until the next login, or until the app is
+  opened again from Applications; opening it while it runs drops the menu down. When the port is
+  taken, the icon becomes a warning sign and the agent tries again every 10 seconds. The icon is a
+  small AppKit program, `PazScanMenuBar`, beside the agent in the same app; without a desktop
+  session (over SSH, say) it cannot start, and the agent runs without it.
 - **USB scanners** use SANE from `NAPS2.Sane.Binaries`, which the publish script puts inside
   `Paz Scan Agent.app/Contents/MacOS`. **Network scanners** use NAPS2's eSCL driver. The Apple
   ImageCaptureCore driver is not in the NAPS2 NuGet build, so a scanner that only works through
@@ -244,6 +258,22 @@ removes the macOS one. Those are the only parts that would cost money, and they 
   login. `paz-scan-agent --unregister-startup` turns that off for one user (a `Hidden=true` entry in
   `~/.config/autostart`); `--register-startup` turns it back on. An upgrade stops every running
   agent and starts it again for the same users; `apt remove` stops them.
+- **The tray icon** shows that the agent is running. Its menu has the version, the status
+  ("Running on port 47316", or why not), **View Live Logs…**, **Open Logs Folder** and **Quit Paz
+  Scan Agent**; a middle click opens the log too. The log window follows the current log file, with
+  warnings in orange and errors in red; Ctrl+F searches it. When the port is taken, the icon becomes
+  a warning sign and the agent tries again every 10 seconds. The icon is `PazScanTray.py` beside the
+  agent, run with `python3`, using GTK 3 and AppIndicator: KDE, Ubuntu, Cinnamon, MATE and XFCE show
+  it. **Plain GNOME** (Debian, Fedora) shows no tray icons until you add the AppIndicator extension
+  (`sudo apt install gnome-shell-extension-appindicator`, then sign out and back in). The `.deb`
+  recommends the packages it needs; from the tarball, install them yourself:
+
+  ```sh
+  sudo apt install python3-gi gir1.2-gtk-3.0 gir1.2-ayatanaappindicator3-0.1   # Debian/Ubuntu
+  sudo dnf install python3-gobject gtk3 libappindicator-gtk3                    # Fedora
+  ```
+
+  Without them, or without a desktop session, the agent runs without an icon and says why in the log.
 - From the tarball, install SANE before starting the agent (the `.deb` depends on it). On
   Debian/Ubuntu:
 
@@ -356,8 +386,9 @@ export PAZSCAN_Agent__AllowedOrigins__5="http://localhost:*"
 directory (see [Logs](#logs)).
 
 Changing `appsettings.json` or the `PAZSCAN_` variables needs an agent restart: options are
-read once at start-up, so stop and start the agent (the tray menu on Windows). Upgrades keep the
-settings file in the data folder on every platform, and on Windows and Linux the one beside the
-executable too. The Windows uninstaller removes both, with the logs; the macOS and Linux ones leave
+read once at start-up, so stop and start the agent: Quit from its icon's menu, then open it again
+(on Windows from the Start menu, on macOS from Applications, on Linux from the applications menu).
+Upgrades keep the settings file in the data folder on every platform, and on Windows and Linux the
+one beside the executable too. The Windows uninstaller removes both, with the logs; the macOS and Linux ones leave
 the data folder. A setting the agent cannot use (such as a malformed allowed origin) shows in the
-tray icon's menu or in the log.
+icon's menu (tray or menu bar) and in the log.

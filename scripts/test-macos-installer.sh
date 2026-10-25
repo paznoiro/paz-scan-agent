@@ -43,7 +43,7 @@ wait_agent() { # port
   ok "the agent answers on port $1"
 }
 
-wait_gone() { # message, then the command that must eventually succeed
+wait_for() { # message, then the command that must eventually succeed
   local message=$1 deadline=$((SECONDS + 30))
   shift
   until "$@"; do
@@ -83,6 +83,7 @@ check "it offers SANE and network scanners" contains "$status" '"drivers":["sane
 check "it lists scanners (SANE and eSCL load)" contains "$(get "$default_port" /v1/devices)" '['
 
 check "launchd runs it in this session" launchctl print "gui/$(id -u)/$label"
+wait_for "it shows its menu bar icon" pgrep -qx PazScanMenuBar
 check "it refuses other web pages" test "$(status_code "$default_port" /v1/devices https://evil.example)" = 403
 
 step "Upgrading over the running agent"
@@ -94,13 +95,15 @@ check "nothing from the old version lingers" test ! -e "$app/Contents/MacOS/left
 wait_agent "$other_port"
 check "the upgraded agent restarted with the kept settings" contains "$status" "\"version\":\"$version\""
 check "the old agent was stopped" silent "$default_port"
+wait_for "one menu bar icon, the upgraded agent's" bash -c '[ "$(pgrep -x PazScanMenuBar | wc -l)" -eq 1 ]'
 
 step "Uninstalling"
 check "there is an uninstaller" test -x "$app/Contents/Resources/uninstall.sh"
 sudo "$app/Contents/Resources/uninstall.sh"
 check "the app is gone" test ! -e "$app"
 check "it no longer starts at login" test ! -e "$agent_plist"
-wait_gone "the agent has stopped" silent "$other_port"
+wait_for "the agent has stopped" silent "$other_port"
+wait_for "its menu bar icon has gone" bash -c '! pgrep -x PazScanMenuBar > /dev/null'
 check "launchd no longer has it" bash -c "! launchctl print gui/$(id -u)/$label > /dev/null 2>&1"
 check "the package is forgotten" bash -c "! pkgutil --pkg-info $label > /dev/null 2>&1"
 
