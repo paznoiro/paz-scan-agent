@@ -64,6 +64,10 @@ public static class AgentApi
             {
                 return Error(StatusCodes.Status409Conflict, "SCAN_IN_PROGRESS", exception.Message);
             }
+            catch (ScannerStuckException exception)
+            {
+                return Error(StatusCodes.Status409Conflict, "SCANNER_STUCK", exception.Message);
+            }
         });
 
         v1.MapGet("/scans/{id}", (string id, ScanSessionManager sessions) =>

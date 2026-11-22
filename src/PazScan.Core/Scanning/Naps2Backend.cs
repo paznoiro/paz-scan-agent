@@ -17,7 +17,7 @@ namespace PazScan.Core.Scanning;
 /// Windows that is a GDI image context plus the 32-bit worker TWAIN drivers need; on macOS and
 /// Linux it is ImageSharp plus SANE and eSCL.</para>
 /// </summary>
-public sealed class Naps2Backend : IScanBackend
+public sealed class Naps2Backend : IScanBackend, IReportsScanActivity
 {
     /// <summary>Network scanners answer mDNS within a second or two; this waits for the slow ones.</summary>
     private const int NetworkSearchMilliseconds = 4000;
@@ -36,6 +36,9 @@ public sealed class Naps2Backend : IScanBackend
     // A network scanner's id says nothing about where it is; its connection URI comes from discovery.
     // Kept from the last listing so a scan does not have to search the network again.
     private readonly ConcurrentDictionary<string, ScanDevice> _known = new();
+    private int _loggedQuarter = -1;
+
+    public event Action<string>? Activity;
 
     public Naps2Backend(ScanningContext context, IReadOnlyList<Driver> drivers, ILogger logger)
     {
@@ -44,6 +47,19 @@ public sealed class Naps2Backend : IScanBackend
         _drivers = drivers;
         _logger = logger;
         _logger.LogInformation("Scanner drivers: {Drivers}", string.Join(", ", _drivers.Select(DriverName)));
+        _controller.PageStart += (_, page) =>
+        {
+            Interlocked.Exchange(ref _loggedQuarter, -1);
+            _logger.LogInformation("Waiting for page {Page} from the scanner", page.PageNumber);
+            Activity?.Invoke($"waiting for page {page.PageNumber}");
+        };
+        _controller.PageProgress += (_, page) =>
+        {
+            var quarter = (int)(page.Progress * 4);
+            if (Interlocked.Exchange(ref _loggedQuarter, quarter) != quarter)
+                _logger.LogDebug("Page {Page} transfer at {Progress:P0}", page.PageNumber, page.Progress);
+            Activity?.Invoke($"page {page.PageNumber} at {page.Progress:P0}");
+        };
     }
 
     public IReadOnlyList<string> Drivers => _drivers.Select(DriverName).ToList();

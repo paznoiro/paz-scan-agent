@@ -101,6 +101,13 @@ dimensions, DPI and side) is logged. If the system shows a printer but the agent
 install the manufacturer's scanner driver or software: a print-only queue has no scanner behind it,
 and eSCL scanners must advertise themselves over mDNS.
 
+A scanner driver can stop responding without returning or reporting an error. The agent ends such a
+scan after 60 seconds without a sign of life (180 before the first page), or 4 seconds after Stop, and
+keeps the pages so far. The log then shows `no response from the scanner` with the last thing the
+scanner did. A new scan is refused until the stuck driver call returns, usually after turning the
+scanner off and on; restarting the agent always clears it. The limits are the `FirstPageTimeoutSeconds`,
+`PageTimeoutSeconds` and `StopTimeoutSeconds` agent settings.
+
 ## Release
 
 The application, tray icons, log windows, installers, and shortcuts use the artwork in

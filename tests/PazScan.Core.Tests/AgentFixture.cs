@@ -21,10 +21,11 @@ public sealed class AgentFixture : IAsyncDisposable
 
     public string TempPath { get; }
 
-    public static async Task<AgentFixture> StartAsync(IScanBackend? backend = null)
+    public static async Task<AgentFixture> StartAsync(IScanBackend? backend = null, Action<AgentOptions>? configureOptions = null)
     {
         var tempPath = Path.Combine(Path.GetTempPath(), "pazscan-tests", Guid.NewGuid().ToString("N"));
         var options = new AgentOptions { TempPath = tempPath };
+        configureOptions?.Invoke(options);
         var app = AgentServer.Build(
             options,
             backend ?? new DemoBackend(pageDelay: TimeSpan.FromMilliseconds(5)),

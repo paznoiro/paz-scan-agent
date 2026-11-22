@@ -44,6 +44,18 @@ public sealed class AgentOptions
     /// <summary>A scan nobody has asked about for this long is deleted, pages and all.</summary>
     public int SessionIdleMinutes { get; set; } = 120;
 
+    /// <summary>
+    /// A scan ends when the scanner shows no sign of life for this long before its first page, which
+    /// allows for a lamp warming up.
+    /// </summary>
+    public double FirstPageTimeoutSeconds { get; set; } = 180;
+
+    /// <summary>The same limit between pages. Transfer progress counts as a sign of life.</summary>
+    public double PageTimeoutSeconds { get; set; } = 60;
+
+    /// <summary>How long a driver gets to obey Stop before the scan ends without it.</summary>
+    public double StopTimeoutSeconds { get; set; } = 4;
+
     public IReadOnlyList<string> EffectiveAllowedOrigins =>
         AllowedOrigins is { Length: > 0 } ? AllowedOrigins : DefaultAllowedOrigins;
 

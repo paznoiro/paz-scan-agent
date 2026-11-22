@@ -6,6 +6,10 @@ namespace PazScan.Core.Sessions;
 
 public sealed class ScanInProgressException() : Exception("Another scan is still running.");
 
+/// <summary>An earlier scan ended without its driver call returning, so the scanner is still tied up.</summary>
+public sealed class ScannerStuckException()
+    : Exception("The scanner is still not responding. Turn it off and on again, then scan. If that does not help, restart the Scan Agent.");
+
 /// <summary>
 /// The scans this agent is holding pages for.
 ///
@@ -21,6 +25,8 @@ public sealed class ScanSessionManager : IDisposable
     private readonly ILogger<ScanSessionManager> _logger;
     private readonly string _root;
     private readonly TimeSpan _idle;
+    private readonly ScanTimeouts _timeouts;
+    private Task _driver = Task.CompletedTask;
     private readonly Timer _sweeper;
 
     public ScanSessionManager(AgentOptions options, IScanBackend backend, ILogger<ScanSessionManager> logger)
@@ -29,6 +35,7 @@ public sealed class ScanSessionManager : IDisposable
         _logger = logger;
         _root = options.EffectiveTempPath;
         _idle = TimeSpan.FromMinutes(options.SessionIdleMinutes);
+        _timeouts = ScanTimeouts.From(options);
 
         // Whatever a previous run left behind belongs to no one now.
         try
@@ -49,15 +56,18 @@ public sealed class ScanSessionManager : IDisposable
         lock (_startGate)
         {
             if (_sessions.Values.Any(session => session.IsRunning)) throw new ScanInProgressException();
+            // Tracked here too: the web app may have deleted the scan the stuck call belongs to.
+            if (!_driver.IsCompleted) throw new ScannerStuckException();
 
             var id = Guid.NewGuid().ToString("N");
             var directory = Path.Combine(_root, id);
             Directory.CreateDirectory(directory);
             _logger.LogInformation("Scan {Id} starting: device {DeviceId}, {Source}, {Color}, {Dpi} dpi, {PageSize}, deskew {Deskew}, quality {Quality}, folder {Directory}",
                 id, settings.DeviceId, settings.Source, settings.Color, settings.Dpi, settings.PageSize, settings.Deskew, settings.Quality, directory);
-            var session = new ScanSession(id, directory, settings);
+            var session = new ScanSession(id, directory, settings, _timeouts);
             _sessions[id] = session;
             session.Start(_backend, _logger);
+            _driver = session.DriverFinished;
             return session;
         }
     }

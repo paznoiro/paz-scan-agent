@@ -35,6 +35,15 @@ public interface IScanBackend
 }
 
 /// <summary>
+/// A backend that can say the scanner is still working between pages, so a slow page is not mistaken
+/// for a stuck one. The handler runs on the driver's thread and must return quickly.
+/// </summary>
+public interface IReportsScanActivity
+{
+    event Action<string>? Activity;
+}
+
+/// <summary>
 /// One scanned page, not yet on disk. The session writes it out and disposes it straight away, so a
 /// two-hundred-page batch never sits in memory.
 /// </summary>
