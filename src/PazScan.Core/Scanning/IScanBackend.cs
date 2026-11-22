@@ -40,12 +40,19 @@ public interface IScanBackend
 /// </summary>
 public abstract class ScannedImage : IDisposable
 {
-    public required int Width { get; init; }
-    public required int Height { get; init; }
-    public required int Dpi { get; init; }
+    /// <summary>Known once <see cref="PrepareAsync"/> has finished: straightening changes the size.</summary>
+    public int Width { get; protected set; }
+    public int Height { get; protected set; }
+    public int Dpi { get; protected set; }
     public required string ContentType { get; init; }
     public PageSide? Side { get; init; }
     public string PreviewContentType { get; init; } = "image/jpeg";
+
+    /// <summary>
+    /// The page's expensive work. Called once, before either save, off the loop that takes pages from
+    /// the scanner, so one page being processed does not hold up the next.
+    /// </summary>
+    public virtual Task PrepareAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     public abstract Task SaveAsync(Stream destination, CancellationToken cancellationToken);
 

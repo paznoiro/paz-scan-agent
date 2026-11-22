@@ -4,6 +4,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using NAPS2.Images;
+using NAPS2.Images.Transforms;
 using NAPS2.Scan;
 using Naps2PageSide = NAPS2.Images.PageSide;
 
@@ -170,11 +171,10 @@ public sealed class Naps2Backend : IScanBackend
         var page = 0;
         await foreach (var image in _controller.Scan(options, cancellationToken))
         {
-            var scanned = new Naps2ScannedImage(_context, image, settings);
+            var scanned = new Naps2ScannedImage(image, settings);
             page++;
-            _logger.LogInformation("Scanner {Device} produced page {Page}: {Width}x{Height} at {Dpi} dpi, {ContentType}, side {Side}",
-                device.Name, page, scanned.Width, scanned.Height, scanned.Dpi, scanned.ContentType,
-                scanned.Side?.ToString() ?? "single");
+            _logger.LogInformation("Scanner {Device} produced page {Page}: {ContentType}, side {Side}",
+                device.Name, page, scanned.ContentType, scanned.Side?.ToString() ?? "single");
             yield return scanned;
         }
         _logger.LogInformation("Scanner {Device} finished after {Pages} page(s)", device.Name, page);
@@ -223,25 +223,21 @@ public sealed class Naps2Backend : IScanBackend
 
     private sealed class Naps2ScannedImage : ScannedImage
     {
-        private readonly ScanningContext _context;
         private readonly ProcessedImage _image;
-        // Rendered once: on a deskewed page that is the expensive step.
-        private readonly IMemoryImage _rendered;
+        // Rendered once, and both files come from it: on a deskewed page that is the expensive step.
+        private IMemoryImage? _rendered;
         private readonly ColorMode _color;
         private readonly int _quality;
+        private readonly int _requestedDpi;
 
         [SetsRequiredMembers]
-        public Naps2ScannedImage(ScanningContext context, ProcessedImage image, ScanSettings settings)
+        public Naps2ScannedImage(ProcessedImage image, ScanSettings settings)
         {
-            _context = context;
             _image = image;
             _color = settings.Color;
             _quality = settings.Quality;
+            _requestedDpi = settings.Dpi;
 
-            _rendered = image.Render();
-            Width = _rendered.Width;
-            Height = _rendered.Height;
-            Dpi = _rendered.HorizontalResolution > 0 ? (int)Math.Round(_rendered.HorizontalResolution) : settings.Dpi;
             // Black and white compresses far better losslessly, and JPEG smears its edges.
             ContentType = _color == ColorMode.BlackAndWhite ? "image/png" : "image/jpeg";
             Side = image.PostProcessingData.PageSide switch
@@ -252,24 +248,35 @@ public sealed class Naps2Backend : IScanBackend
             };
         }
 
-        public override Task SaveAsync(Stream destination, CancellationToken cancellationToken)
+        public override Task PrepareAsync(CancellationToken cancellationToken)
         {
-            if (_color == ColorMode.BlackAndWhite)
-                _rendered.Save(destination, ImageFileFormat.Png, new ImageSaveOptions { PixelFormatHint = ImagePixelFormat.BW1 });
-            else
-                _rendered.Save(destination, ImageFileFormat.Jpeg, new ImageSaveOptions { Quality = _quality });
+            _rendered = _image.Render();
+            Width = _rendered.Width;
+            Height = _rendered.Height;
+            Dpi = _rendered.HorizontalResolution > 0 ? (int)Math.Round(_rendered.HorizontalResolution) : _requestedDpi;
             return Task.CompletedTask;
         }
 
-        public override async Task SavePreviewAsync(Stream destination, CancellationToken cancellationToken)
+        public override Task SaveAsync(Stream destination, CancellationToken cancellationToken)
         {
-            using var preview = await new ThumbnailRenderer(_context.ImageContext).Render(_image, PreviewSize);
+            if (_color == ColorMode.BlackAndWhite)
+                _rendered!.Save(destination, ImageFileFormat.Png, new ImageSaveOptions { PixelFormatHint = ImagePixelFormat.BW1 });
+            else
+                _rendered!.Save(destination, ImageFileFormat.Jpeg, new ImageSaveOptions { Quality = _quality });
+            return Task.CompletedTask;
+        }
+
+        public override Task SavePreviewAsync(Stream destination, CancellationToken cancellationToken)
+        {
+            // From the page already straightened, rather than applying the rotation a second time.
+            using var preview = _rendered!.Clone().PerformTransform(new ThumbnailTransform(PreviewSize));
             preview.Save(destination, ImageFileFormat.Jpeg, new ImageSaveOptions { Quality = 80 });
+            return Task.CompletedTask;
         }
 
         public override void Dispose()
         {
-            _rendered.Dispose();
+            _rendered?.Dispose();
             _image.Dispose();
             base.Dispose();
         }

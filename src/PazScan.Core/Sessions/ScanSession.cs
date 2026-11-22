@@ -8,11 +8,17 @@ namespace PazScan.Core.Sessions;
 /// One press of Scan: the pages it has produced so far, on disk, and how it ended.
 ///
 /// <para>The web app polls <see cref="Snapshot"/> and fetches each page as it appears; the agent never
-/// pushes. Pages are written out one at a time and their images disposed, so memory stays flat
+/// pushes. A few pages are processed at a time and their images disposed, so memory stays flat
 /// however many sheets go through the feeder.</para>
 /// </summary>
 public sealed class ScanSession
 {
+    /// <summary>
+    /// Pages being processed at once. A fast two-sided feeder outruns one encoder, and a queue behind it
+    /// makes each later page arrive later; a small limit keeps memory flat on long stacks.
+    /// </summary>
+    private static readonly int MaxPagesInHand = Math.Clamp(Environment.ProcessorCount - 1, 1, 3);
+
     private readonly object _gate = new();
     private readonly List<ScanPageInfo> _pages = [];
     private readonly List<string> _previewTypes = [];
@@ -67,45 +73,31 @@ public sealed class ScanSession
     private async Task RunAsync(IScanBackend backend, ILogger logger)
     {
         var started = Stopwatch.GetTimestamp();
+        using var slots = new SemaphoreSlim(MaxPagesInHand);
+        var published = Task.CompletedTask;
+        var nextIndex = 0;
         try
         {
-            await foreach (var image in backend.ScanAsync(Settings, _cancel.Token))
+            try
             {
-                using (image)
+                await foreach (var image in backend.ScanAsync(Settings, _cancel.Token))
                 {
-                    var pageStarted = Stopwatch.GetTimestamp();
-                    int index;
-                    lock (_gate) index = _pages.Count;
-
-                    var full = Path.Combine(Directory, FileName(index, preview: false));
-                    await using (var stream = File.Create(full))
-                        await image.SaveAsync(stream, _cancel.Token);
-
-                    var preview = Path.Combine(Directory, FileName(index, preview: true));
-                    await using (var stream = File.Create(preview))
-                        await image.SavePreviewAsync(stream, _cancel.Token);
-
-                    var fullBytes = new FileInfo(full).Length;
-                    var previewBytes = new FileInfo(preview).Length;
-                    var page = new ScanPageInfo(
-                        index,
-                        image.Width,
-                        image.Height,
-                        image.Dpi,
-                        image.ContentType,
-                        fullBytes,
-                        image.Side switch { PageSide.Front => "front", PageSide.Back => "back", _ => null });
-                    // Published only once both files are complete, so a poll never sees a half-written page.
-                    lock (_gate)
+                    await slots.WaitAsync();
+                    if (published.IsFaulted)
                     {
-                        _pages.Add(page);
-                        _previewTypes.Add(image.PreviewContentType);
+                        slots.Release();
+                        image.Dispose();
+                        break;
                     }
-
-                    logger.LogInformation("Scan {Id} page {Index}: {Width}x{Height} at {Dpi} dpi, {ContentType}, side {Side}, {Bytes} bytes in {File}; preview {PreviewBytes} bytes in {Preview}; {Elapsed:0.0} ms",
-                        Id, index, page.Width, page.Height, page.Dpi, page.ContentType, page.Side ?? "single",
-                        fullBytes, full, previewBytes, preview, Stopwatch.GetElapsedTime(pageStarted).TotalMilliseconds);
+                    var index = nextIndex++;
+                    var written = Task.Run(() => WritePageAsync(image, index, slots, logger));
+                    published = PublishInOrderAsync(published, written);
                 }
+            }
+            finally
+            {
+                // A jam or a Stop ends the feed; the pages already scanned are still written and kept.
+                await published;
             }
             // NAPS2 ends a cancelled scan quietly rather than throwing.
             Finish(_cancel.IsCancellationRequested ? "cancelled" : "done", null);
@@ -134,6 +126,64 @@ public sealed class ScanSession
             Finish("failed", info);
         }
     }
+
+    private async Task<WrittenPage> WritePageAsync(ScannedImage image, int index, SemaphoreSlim slots, ILogger logger)
+    {
+        try
+        {
+            using (image)
+            {
+                var pageStarted = Stopwatch.GetTimestamp();
+                // Not the scan's token: Stop ends the feed, and a page already scanned is kept.
+                await image.PrepareAsync(CancellationToken.None);
+
+                var full = Path.Combine(Directory, FileName(index, preview: false));
+                await using (var stream = File.Create(full))
+                    await image.SaveAsync(stream, CancellationToken.None);
+
+                var preview = Path.Combine(Directory, FileName(index, preview: true));
+                await using (var stream = File.Create(preview))
+                    await image.SavePreviewAsync(stream, CancellationToken.None);
+
+                var fullBytes = new FileInfo(full).Length;
+                var previewBytes = new FileInfo(preview).Length;
+                var page = new ScanPageInfo(
+                    index,
+                    image.Width,
+                    image.Height,
+                    image.Dpi,
+                    image.ContentType,
+                    fullBytes,
+                    image.Side switch { PageSide.Front => "front", PageSide.Back => "back", _ => null });
+
+                logger.LogInformation("Scan {Id} page {Index}: {Width}x{Height} at {Dpi} dpi, {ContentType}, side {Side}, {Bytes} bytes in {File}; preview {PreviewBytes} bytes in {Preview}; {Elapsed:0.0} ms",
+                    Id, index, page.Width, page.Height, page.Dpi, page.ContentType, page.Side ?? "single",
+                    fullBytes, full, previewBytes, preview, Stopwatch.GetElapsedTime(pageStarted).TotalMilliseconds);
+                return new WrittenPage(page, image.PreviewContentType);
+            }
+        }
+        finally
+        {
+            slots.Release();
+        }
+    }
+
+    /// <summary>
+    /// Pages are written side by side but appear in scan order, and only once both files are complete,
+    /// so a poll never sees a half-written page or a gap.
+    /// </summary>
+    private async Task PublishInOrderAsync(Task earlier, Task<WrittenPage> written)
+    {
+        await Task.WhenAll(earlier, written);
+        var (page, previewType) = await written;
+        lock (_gate)
+        {
+            _pages.Add(page);
+            _previewTypes.Add(previewType);
+        }
+    }
+
+    private readonly record struct WrittenPage(ScanPageInfo Page, string PreviewType);
 
     private void LogFinished(ILogger logger, long started)
     {

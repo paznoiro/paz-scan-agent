@@ -96,7 +96,7 @@ current file, and **Open logs folder**; the macOS menu bar icon and the Linux tr
 same two, as **View Live Logs…** and **Open Logs Folder**. Without a desktop, run
 `PazScanAgent --open-logs` or tail the file yourself.
 
-Every HTTP request, scanner listing, capability query, scan and scanned page (path, size, type,
+Every HTTP request (except the web app's successful twice-a-second status polls during a scan), scanner listing, capability query, scan and scanned page (path, size, type,
 dimensions, DPI and side) is logged. If the system shows a printer but the agent lists no scanner,
 install the manufacturer's scanner driver or software: a print-only queue has no scanner behind it,
 and eSCL scanners must advertise themselves over mDNS.

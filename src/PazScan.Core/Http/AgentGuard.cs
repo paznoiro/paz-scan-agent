@@ -93,7 +93,13 @@ public sealed class AgentGuard(RequestDelegate next, AgentOptions options, ILogg
         var elapsed = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
         var path = request.Path + request.QueryString;
         var from = string.IsNullOrWhiteSpace(origin) ? "-" : origin;
-        if (note is null)
+        if (note is null && IsSuccessfulStatusPoll(context))
+        {
+            // Twice a second for as long as a scan runs. The session logs each page and how it ended.
+            logger.LogTrace("HTTP {Method} {Path} -> {Status} in {Elapsed:0.0} ms, origin {Origin}",
+                request.Method, path, context.Response.StatusCode, elapsed, from);
+        }
+        else if (note is null)
         {
             logger.LogInformation("HTTP {Method} {Path} -> {Status} in {Elapsed:0.0} ms, origin {Origin}",
                 request.Method, path, context.Response.StatusCode, elapsed, from);
@@ -104,6 +110,14 @@ public sealed class AgentGuard(RequestDelegate next, AgentOptions options, ILogg
                 request.Method, path, context.Response.StatusCode, elapsed, from, note);
         }
     }
+
+    /// <summary><c>GET /v1/scans/{id}</c> that succeeded. Pages, previews and every failure stay in the log.</summary>
+    private static bool IsSuccessfulStatusPoll(HttpContext context) =>
+        HttpMethods.IsGet(context.Request.Method)
+        && context.Response.StatusCode == StatusCodes.Status200OK
+        && context.Request.Path.StartsWithSegments("/v1/scans", out var rest)
+        && rest.Value is { Length: > 1 } id
+        && id.LastIndexOf('/') == 0;
 
     private static Task Refuse(HttpContext context, int status, string code, string message)
     {
